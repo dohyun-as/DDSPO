@@ -1,0 +1,13 @@
+accelerate>=0.18.0
+datasets
+diffusers>=0.15.0
+transformers>=4.27.0
+safetensors>=0.3.1
+numpy
+scipy
+Pillow
+tqdm
+huggingface-hub
+wandb
+ninja
+xformers==0.0.29.post3
