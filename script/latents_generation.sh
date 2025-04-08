@@ -7,8 +7,8 @@
 CUDA_VISIBLE_DEVICES=$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
-COMMON_ARGS="--json_file "./prompts_generation/80obj/prompts_metadata.jsonl" \
---save_dir "./data/paired_image/" \
+COMMON_ARGS="--json_file "./data/captions/test/prompts_metadata.jsonl" \
+--save_dir "./data/latents/paired_image/" \
 --num_samples 100000 \
 --batch_size 128 \
 --save_type "latent"
