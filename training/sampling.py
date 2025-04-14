@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from tqdm.auto import tqdm
 from accelerate import Accelerator
 from diffusers import StableDiffusionPipeline
@@ -13,11 +13,11 @@ from safetensors.torch import save_file
 
 
 class JsonDataset(Dataset):
-    def __init__(self, json_file, num_samples):
+    def __init__(self, json_file):
         with open(json_file, "r") as f:
             self.data = [json.loads(line) for line in f]
-        if num_samples > 0:
-            self.data = random.sample(self.data, min(num_samples, len(self.data)))
+        # if num_samples > 0:
+        #     self.data = random.sample(self.data, min(num_samples, len(self.data)))
 
     def __len__(self):
         return len(self.data)
@@ -112,6 +112,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for generation")
     parser.add_argument("--save_type", type=str, default="latent", choices=["latent", "image"],
         help="What to save: 'latent' or 'image'")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+
 
     args = parser.parse_args()
 
@@ -125,6 +127,12 @@ def main():
     args = parse_args()
 
     accelerator = Accelerator()
+
+    
+    seed = args.seed + accelerator.process_index
+    random.seed(seed)
+    torch.manual_seed(seed)
+
     device = accelerator.device
     
     if args.save_type == "latent":
@@ -133,12 +141,23 @@ def main():
         os.makedirs(os.path.join(args.save_dir, "images"), exist_ok=True)
 
 
-    dataset = JsonDataset(args.json_file, args.num_samples)
+    dataset = JsonDataset(args.json_file)
+    
+    print("len(dataset) original", len(dataset))
+
+    if args.num_samples > 0:
+        original_seed = random.getstate()
+        random.seed(42)
+        indices = random.sample(range(len(dataset)), args.num_samples)
+        random.setstate(original_seed)
+        dataset = Subset(dataset, indices)
+        print("len(dataset) sampled", len(dataset))
+        
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
     dataloader = accelerator.prepare(dataloader)
 
     # Load model
-    pipe = StableDiffusionPipeline.from_pretrained(args.model_name, safety_checker=None, torch_dtype=torch.float16).to(device)
+    pipe = StableDiffusionPipeline.from_pretrained(args.model_name, safety_checker=None, cache_dir=os.path.abspath("./cache"), torch_dtype=torch.float16).to(device)
 
     pipe.set_progress_bar_config(disable=True)
     

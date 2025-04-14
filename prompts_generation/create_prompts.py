@@ -75,8 +75,8 @@ def generate_two_object_sample(rng):
         tag="two_object",
         prompt=f"a photo of {with_article(classnames[idx_a])} and {with_article(classnames[idx_b])}",
         neg_prompts=[
-            f"a photo of {with_article(classnames[alt_a])} and {with_article(classnames[idx_b])}",
-            f"a photo of {with_article(classnames[idx_a])} and {with_article(classnames[alt_b])}"
+            f"a photo of {with_article(classnames[idx_b])}",
+            f"a photo of {with_article(classnames[idx_a])}"
         ]
     )
 
@@ -108,7 +108,7 @@ def generate_color_sample(rng):
         tag="colors",
         prompt=f"a photo of {with_article(color)} {classnames[idx]}",
         neg_prompts=[
-            f"a photo of {with_article(alt_color)} {classnames[idx]}"
+            f"a photo of {classnames[idx]}"
         ]
     )
 
@@ -128,7 +128,7 @@ def generate_position_sample(rng):
         prompt=f"a photo of {with_article(classnames[idx_a])} {position} {with_article(classnames[idx_b])}",
         neg_prompts=[
             f"a photo of {with_article(classnames[idx_a])} {alt_pos} {with_article(classnames[idx_b])}",
-            f"a photo of {with_article(classnames[alt_object])} {position} {with_article(classnames[idx_b])}"
+            f"a photo of {with_article(classnames[idx_a])} and {with_article(classnames[idx_b])}"
         ]
     )
 # Generate color attribution samples
@@ -143,8 +143,10 @@ def generate_color_attribution_sample(rng):
         tag="color_attr",
         prompt=f"a photo of {with_article(colors[cidx_a])} {classnames[idx_a]} and {with_article(colors[cidx_b])} {classnames[idx_b]}",
         neg_prompts=[
-            f"a photo of {with_article(colors[alt_cidx])} {classnames[idx_a]} and {with_article(colors[cidx_b])} {classnames[idx_b]}",
-            f"a photo of {with_article(colors[cidx_a])} {classnames[idx_a]} and {with_article(colors[alt_cidx])} {classnames[idx_b]}"
+            f"a photo of {classnames[idx_a]} and {with_article(colors[cidx_b])} {classnames[idx_b]}",
+            f"a photo of {with_article(colors[cidx_a])} {classnames[idx_a]} and {classnames[idx_b]}",
+            f"a photo of {with_article(colors[cidx_a])} {classnames[idx_a]}",
+            f"a photo of {with_article(colors[cidx_b])} {classnames[idx_b]}"
         ]
     )
 
@@ -158,8 +160,10 @@ def generate_color_t2i_sample(rng):
         tag="color_t2i",
         prompt=f"a {color_a} {noun_a} and a {color_b} {noun_b}",
         neg_prompts=[
-            f"a {neg_color} {noun_a} and a {color_b} {noun_b}",
-            f"a {color_a} {noun_a} and a {neg_color} {noun_b}"
+            f"a {noun_a} and a {color_b} {noun_b}",
+            f"a {color_a} {noun_a} and a {noun_b}",
+            f"a {color_a} {noun_a}",
+            f"a {color_b} {noun_b}"
         ]
     )
 
@@ -177,9 +181,11 @@ def generate_shape_t2i_sample(rng):
         tag="shape_t2i",
         prompt=f"a {shape_a} {noun_a} and a {shape_b} {noun_b}",
         neg_prompts=[
-            f"a {alt_shape_a} {noun_a} and a {shape_b} {noun_b}",
+            f"a {noun_a} and a {shape_b} {noun_b}",
             # f"a {shape_a} {alt_noun_a} and a {shape_b} {noun_b}",
-            f"a {shape_a} {noun_a} and a {alt_shape_b} {noun_b}"
+            f"a {shape_a} {noun_a} and a {noun_b}",
+            f"a {shape_a} {noun_a}",
+            f"a {shape_b} {noun_b}"
             # f"a {shape_a} {noun_a} and a {shape_b} {alt_noun_b}"
         ]
     )
@@ -205,9 +211,11 @@ def generate_texture_t2i_sample(rng):
         tag="texture_t2i",
         prompt=f"a {tex_a.lower()} {obj_a} and a {tex_b.lower()} {obj_b}",
         neg_prompts=[
-            f"a {alt_tex_a.lower()} {obj_a} and a {tex_b.lower()} {obj_b}",  # change texture a
+            f"a {obj_a} and a {tex_b.lower()} {obj_b}",  # change texture a
             # f"a {tex_a.lower()} {alt_obj_a} and a {tex_b.lower()} {obj_b}",  # change obj a
-            f"a {tex_a.lower()} {obj_a} and a {alt_tex_b.lower()} {obj_b}"  # change texture b
+            f"a {tex_a.lower()} {obj_a} and a {obj_b}",  # change texture b
+            f"a {tex_a.lower()} {obj_a}",
+            f"a {tex_b.lower()} {obj_b}"
             # f"a {tex_a.lower()} {obj_a} and a {tex_b.lower()} {alt_obj_b}"   # change obj b
         ]
     )
@@ -222,6 +230,7 @@ def generate_spatial_t2i_sample(rng):
         prompt=f"a {noun_a} {rel} a {noun_b}",
         neg_prompts=[
             f"a {noun_b} {rel} a {noun_a}",
+            f"a {noun_b} and a {noun_a}",
             f"a {noun_a} {alt_rel} a {noun_b}"
         ]
     )
@@ -259,9 +268,11 @@ def generate_complex_caption_sample(rng):
         "tag": "complex_caption",
         "prompt": f"a {adj_a} {noun_a} {rel} a {adj_b} {noun_b}",
         "neg_prompts": [
-            f"a {alt_adj_a} {noun_a} {rel} a {adj_b} {noun_b}",
-            f"a {adj_a} {noun_a} {rel} a {alt_adj_b} {noun_b}",
+            f"a {noun_a} {rel} a {adj_b} {noun_b}",
+            f"a {adj_a} {noun_a} {rel} a {noun_b}",
             f"a {adj_a} {noun_a} {alt_rel} a {adj_b} {noun_b}"
+            f"a {adj_a} {noun_a}",
+            f"a {adj_b} {noun_b}",
         ]
     }
     

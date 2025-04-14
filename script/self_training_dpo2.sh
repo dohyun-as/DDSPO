@@ -11,7 +11,7 @@ DATA_DIR="./data/latents/800k_template_removal"
 
 COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
-  --train_batch_size=8 \
+  --train_batch_size=16 \
   --dataloader_num_workers=8 \
   --gradient_accumulation_steps=64 \
   --max_train_steps=2000 \
@@ -19,12 +19,12 @@ COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --learning_rate=2e-8 --scale_lr \
   --checkpointing_steps 100 \
   --beta_dpo 2000 \
-  --output_dir="results/dpo_method_1_lr" \
+  --output_dir="results/dpo_method_2_lr" \
   --cache_dir "./cache"
 "
-#batch_size=8x64x4=2048
+#batch_size=16/2x64x4=2048
 if [ ${NUM_GPUS} -gt 1 ]; then
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port 24444 --multi_gpu --num_processes ${NUM_GPUS} training/dpo.py $COMMON_ARGS
+  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --multi_gpu --num_processes ${NUM_GPUS} training/dpo_method_2.py $COMMON_ARGS
 else
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port 24444 training/dpo.py $COMMON_ARGS
+  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch training/dpo_method_2.py $COMMON_ARGS
 fi
