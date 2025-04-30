@@ -21,7 +21,6 @@ from mmdet.apis import inference_detector, init_detector
 import open_clip
 from clip_benchmark.metrics import zeroshot_classification as zsc
 zsc.tqdm = lambda it, *args, **kwargs: it
-from tqdm import tqdm
 
 from accelerate import Accelerator
 import pickle
@@ -36,7 +35,6 @@ def parse_args():
     parser.add_argument("--outfile", type=str, default="results.jsonl")
     parser.add_argument("--model-config", type=str, default=None)
     parser.add_argument("--model-path", type=str, default="./")
-    parser.add_argument("--cache_dir", type=str, default=None)
 
     # Additional mmcv/mmdet style options: e.g. "--options threshold=0.4 max_objects=8"
     parser.add_argument("--options", nargs="*", type=str, default=[])
@@ -70,7 +68,7 @@ def load_models(config_path, model_path, detector_name, clip_arch, device):
 
     # Load CLIP
     clip_model, _, transform = open_clip.create_model_and_transforms(
-        clip_arch, pretrained="openai", device=device, cache_dir=args.cache_dir
+        clip_arch, pretrained="openai", device=device
     )
     tokenizer = open_clip.get_tokenizer(clip_arch)
 

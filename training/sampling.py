@@ -15,7 +15,10 @@ from safetensors.torch import save_file
 class JsonDataset(Dataset):
     def __init__(self, json_file):
         with open(json_file, "r") as f:
-            self.data = [json.loads(line) for line in f]
+            self.data = [
+                json.loads(line) for line in f
+                if json.loads(line).get("neg_prompts")
+            ]
         # if num_samples > 0:
         #     self.data = random.sample(self.data, min(num_samples, len(self.data)))
 
@@ -27,11 +30,11 @@ class JsonDataset(Dataset):
         prompt = item["prompt"]
         neg_prompt = random.choice(item["neg_prompts"])
         sample_id = item["id"]
-        tag = item["tag"]
+        tag = item.get("tag", "")
         return sample_id, tag, prompt, neg_prompt
 
 
-def generate_images(pipeline, dataloader, save_dir, metadata_file, device, accelerator, save_type="latent"):
+def generate_images(args, pipeline, dataloader, save_dir, metadata_file, device, accelerator, save_type="latent"):
     metadata = []
     output_type = "latent" if save_type == "latent" else "pil"
 
@@ -50,8 +53,8 @@ def generate_images(pipeline, dataloader, save_dir, metadata_file, device, accel
         # Generate positive latents
         outs_pos = pipeline(
             prompts,
-            num_inference_steps=25,
-            guidance_scale=7.5,
+            num_inference_steps=args.num_inference_steps,
+            guidance_scale=args.cfg,
             generator=pos_generators,
             output_type=output_type
         ).images
@@ -59,8 +62,8 @@ def generate_images(pipeline, dataloader, save_dir, metadata_file, device, accel
         # Generate negative latents
         outs_neg = pipeline(
             neg_prompts,
-            num_inference_steps=25,
-            guidance_scale=7.5,
+            num_inference_steps=args.num_inference_steps,
+            guidance_scale=args.cfg,
             generator=neg_generators,
             output_type=output_type
         ).images
@@ -84,7 +87,8 @@ def generate_images(pipeline, dataloader, save_dir, metadata_file, device, accel
                 "prompt": prompt,
                 "neg_prompt": neg_prompt,
                 "pos_file": Path(pos_path).name,
-                "neg_file": Path(neg_path).name
+                "neg_file": Path(neg_path).name,
+                # "all_neg_prompts": neg_prompts
             })
 
         accelerator.wait_for_everyone()
@@ -107,12 +111,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--json_file", type=str, required=True, help="Path to the input JSON lines file")
     parser.add_argument("--save_dir", type=str, default="./data/paired_image/", help="Base directory to save latents and metadata")
+    parser.add_argument("--prev_metadata_file", type=str, default=None, help="existing metadata file to filter out already processed samples")
     parser.add_argument("--model_name", type=str, default="CompVis/stable-diffusion-v1-4", help="HuggingFace model name")
     parser.add_argument("--num_samples", type=int, default=-1, help="Number of samples to generate (-1 for all)")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for generation")
+    parser.add_argument("--num_inference_steps", type=int, default=25, help="Number of inference steps")
+    parser.add_argument("--cfg", type=float, default=7.5, help="Classifier-free guidance scale") 
     parser.add_argument("--save_type", type=str, default="latent", choices=["latent", "image"],
         help="What to save: 'latent' or 'image'")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--cache_dir",type=str,default=None, 
+                        help="The directory where the downloaded models and datasets will be stored.")
+    parser.add_argument("--SDXL", action="store_true", help="SDXL")
 
 
     args = parser.parse_args()
@@ -145,6 +155,21 @@ def main():
     
     print("len(dataset) original", len(dataset))
 
+    existing_ids = set()
+    if os.path.exists(args.prev_metadata_file):
+        with open(args.prev_metadata_file, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    existing_ids.add(entry["id"])
+                except json.JSONDecodeError:
+                    continue
+
+    # 남은 샘플 후보만 추려냄
+    remaining_indices = [i for i, item in enumerate(dataset) if item[0] not in existing_ids]
+
+    print(f"Total remaining samples after filtering: {len(remaining_indices)}")
+
     if args.num_samples > 0:
         original_seed = random.getstate()
         random.seed(42)
@@ -157,11 +182,17 @@ def main():
     dataloader = accelerator.prepare(dataloader)
 
     # Load model
-    pipe = StableDiffusionPipeline.from_pretrained(args.model_name, safety_checker=None, cache_dir=os.path.abspath("./cache"), torch_dtype=torch.float16).to(device)
+    if args.SDXL:
+        from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
+        scheduler = EulerDiscreteScheduler.from_pretrained(args.model_name, subfolder="scheduler", cache_dir=args.cache_dir)
+        pipe = StableDiffusionXLPipeline.from_pretrained(args.model_name, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=args.cache_dir).to(device)
+
+    else:
+        pipe = StableDiffusionPipeline.from_pretrained(args.model_name, safety_checker=None, cache_dir=args.cache_dir, torch_dtype=torch.float16).to(device)
 
     pipe.set_progress_bar_config(disable=True)
     
-    generate_images(pipe, dataloader, args.save_dir, args.metadata_file, device, accelerator, args.save_type)
+    generate_images(args, pipe, dataloader, args.save_dir, args.metadata_file, device, accelerator, args.save_type)
 
 
 if __name__ == "__main__":

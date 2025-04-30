@@ -17,7 +17,7 @@ positions = ["left of", "right of", "above", "below"]
 shape_adjectives = ["long", "tall", "short", "big", "small"]
 spatial_prepositions = ["on the side of", "next to", "near", "on the left of",
                         "on the right of", "on the bottom of", "on the top of"]
-numbers = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+numbers = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 
 prompt_counter = 0
 # Proper a vs an
@@ -84,10 +84,10 @@ def generate_two_object_sample(rng):
 
 
 
-def generate_counting_sample(rng, max_count=4):
+def generate_counting_sample(rng, max_count=40):
     idx = rng.choice(len(classnames))
-    num = int(rng.integers(2, max_count, endpoint=True))
-    negs = [f"a photo of {numbers[i]} {make_plural(classnames[idx])}" for i in range(max_count + 1) if i != num and i <= 10]
+    num = int(rng.integers(0, max_count, endpoint=True))
+    negs = [f"a photo of {numbers[i]} {make_plural(classnames[idx])}" for i in range(max_count + 2) if i != num and i <= 10]
     return dict(
         id=unique_id(),
         tag="counting",

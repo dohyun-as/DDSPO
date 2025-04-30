@@ -4,5 +4,12 @@ results
 *.out
 *.log
 evaluation/geneval
+evaluation/HPSv2
 evaluation/T2I-CompBench
+evaluation/mscoco_val2014
 cache
+*.jsonl
+*.csv
+*.parquet
+temp
+script/prev_bash

@@ -364,6 +364,59 @@ def parse_args():
     parser.add_argument(
         "--dreamlike_pairs_only", action="store_true", help="Only train on pairs where both generations are from dreamlike"
     )
+    parser.add_argument(
+        "--only_cfg", action="store_true", help="Only Self Training Diffusion DPO CFG"
+        "Use the reference model’s CFG scores to guide the training of the target model, replacing explicit score."
+    )
+    parser.add_argument(
+        "--guidance_scale",
+        type=float,
+        default=1,
+        help="The guidance scale to use for the reference model. Defaults to 7.5.",
+    )
+    parser.add_argument(
+        "--rand_cond", action="store_true", help="Use random conditioning"
+    )
+    parser.add_argument(
+        "--rand_cond_lambda",
+        type=float,
+        default=20,
+        help="The lambda value for the random conditioning. Defaults to 20 in sigmoid setting, 5 in exponential setting.",
+    )
+    parser.add_argument(
+        "--rand_cond_pt",
+        type=str,
+        default="sigmoid",
+        help="Paths to one or more files containing extra paired text prompts for training.",
+    )
+    parser.add_argument(
+        "--extra_text_path",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Paths to one or more files containing extra paired text prompts for training.",
+    )
+    parser.add_argument(
+        "--timestep_sampling",
+        type=str,
+        default=None,
+        help="The sampling method for timesteps. Choose between ['sigmoid', 'linear']. Defaults to uniform.",
+    )
+    parser.add_argument(
+        "--pos_neg_score", action="store_true", help="using negative prompts for guidance score instead of null prompts"
+    )
+    parser.add_argument(
+        "--random_neg_prompts", action="store_true", help="random negative prompt"
+    )
+    parser.add_argument(
+        "--replace_neg_img_with_other_pos", action="store_true", help="replace negative images with other positive images"
+    )
+    parser.add_argument(
+        "--replace_neg_prompt_with_other_pos", action="store_true", help="replace negative prompts with other positive prompts"
+    )
+    parser.add_argument(
+        "--pos_neg_different_noise", action="store_true", help="replace negative prompts with other positive prompts"
+    )
     
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -386,32 +439,22 @@ def parse_args():
     args.train_method = 'sft' if args.sft else 'dpo'
     return args
 
+def sanitize_tracker_config(config_dict):
+    safe_config = {}
+    for k, v in config_dict.items():
+        if isinstance(v, (int, float, str, bool, torch.Tensor)):
+            safe_config[k] = v
+        elif isinstance(v, list):
+            if all(isinstance(item, str) for item in v):
+                safe_config[k] = ','.join(v)
+    return safe_config
 
 # Adapted from pipelines.StableDiffusionXLPipeline.encode_prompt
-def encode_prompt_sdxl(batch, text_encoders, tokenizers, proportion_empty_prompts, caption_column, is_train=True):
+def encode_prompt_sdxl(batch, text_encoders, text_inputs_list, proportion_empty_prompts, caption_column, is_train=True):
     prompt_embeds_list = []
-    prompt_batch = batch[caption_column]
-
-    captions = []
-    for caption in prompt_batch:
-        if random.random() < proportion_empty_prompts:
-            captions.append("")
-        elif isinstance(caption, str):
-            captions.append(caption)
-        elif isinstance(caption, (list, np.ndarray)):
-            # take a random caption if there are multiple
-            captions.append(random.choice(caption) if is_train else caption[0])
 
     with torch.no_grad():
-        for tokenizer, text_encoder in zip(tokenizers, text_encoders):
-            text_inputs = tokenizer(
-                captions,
-                padding="max_length",
-                max_length=tokenizer.model_max_length,
-                truncation=True,
-                return_tensors="pt",
-            )
-            text_input_ids = text_inputs.input_ids
+        for text_input_ids, text_encoder in zip(text_inputs_list, text_encoders):
             prompt_embeds = text_encoder(
                 text_input_ids.to('cuda'),
                 output_hidden_states=True,
@@ -476,8 +519,8 @@ def main():
     
     ### START DIFFUSION BOILERPLATE ###
     # Load scheduler, tokenizer and models.
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, cache_dir=args.cache_dir,
-                                                    subfolder="scheduler")
+    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, 
+                                                    subfolder="scheduler", cache_dir=args.cache_dir)
     def enforce_zero_terminal_snr(scheduler):
         # Modified from https://arxiv.org/pdf/2305.08891.pdf
         # Turbo needs zero terminal SNR to truly learn from noise
@@ -516,11 +559,11 @@ def main():
             tokenizer_and_encoder_name, subfolder="tokenizer", revision=args.revision, use_fast=False, cache_dir=args.cache_dir
         )
         tokenizer_2 = AutoTokenizer.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="tokenizer_2", revision=args.revision, use_fast=False, cache_dir=args.cache_dir  
+            args.pretrained_model_name_or_path, subfolder="tokenizer_2", revision=args.revision, use_fast=False, cache_dir=args.cache_dir
         )
     else:
         tokenizer = CLIPTokenizer.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision, cache_dir=args.cache_dir  
+            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision, cache_dir=args.cache_dir
         )
         tokenizer_2 = None
 
@@ -558,10 +601,10 @@ def main():
                 tokenizer_and_encoder_name, args.revision, subfolder="text_encoder_2"
             )
             text_encoder_one = text_encoder_cls_one.from_pretrained(
-                tokenizer_and_encoder_name, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir  
+                tokenizer_and_encoder_name, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
             )
             text_encoder_two = text_encoder_cls_two.from_pretrained(
-                args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision, cache_dir=args.cache_dir  
+                args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision, cache_dir=args.cache_dir
             )
             if args.pretrained_model_name_or_path=="stabilityai/stable-diffusion-xl-refiner-1.0":
                 text_encoders = [text_encoder_two]
@@ -571,7 +614,7 @@ def main():
                 tokenizers = [tokenizer, tokenizer_2]
         else:
             text_encoder = CLIPTextModel.from_pretrained(
-                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir  
+                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
             )
         # Can custom-select VAE (used in original SDXL tuning)
         vae_path = (
@@ -580,17 +623,17 @@ def main():
             else args.pretrained_vae_model_name_or_path
         )
         vae = AutoencoderKL.from_pretrained(
-            vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir  
+            vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir
         )
         # clone of model
         ref_unet = UNet2DConditionModel.from_pretrained(
             args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
-            subfolder="unet", revision=args.revision, cache_dir=args.cache_dir  
+            subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
         )
     if args.unet_init:
         print("Initializing unet from", args.unet_init)
     unet = UNet2DConditionModel.from_pretrained(
-        args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, cache_dir=args.cache_dir  
+        args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
     )
 
     # Freeze vae, text_encoder(s), reference unet
@@ -687,8 +730,10 @@ def main():
         
         
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
-
-    train_dataset = self_training_dataset(data_dir=args.train_data_dir)
+    train_dataset = self_training_dataset(data_dir=args.train_data_dir, rand_cond=args.rand_cond, rand_cond_lambda=args.rand_cond_lambda,
+                                          rand_cond_pt=args.rand_cond_pt,n_T=noise_scheduler.num_train_timesteps,extra_text_path=args.extra_text_path,
+                                          timestep_sampling=args.timestep_sampling, random_neg_prompts=args.random_neg_prompts,
+                                          replace_neg_img_with_other_pos=args.replace_neg_img_with_other_pos, replace_neg_prompt_with_other_pos=args.replace_neg_prompt_with_other_pos,)
     
     
     ### DATASET #####
@@ -742,13 +787,13 @@ def main():
         text_encoder_two.to(accelerator.device, dtype=weight_dtype)
         print("offload vae (this actually stays as CPU)")
         vae = accelerate.cpu_offload(vae)
-        print("Offloading text encoders to cpu")
-        text_encoder_one = accelerate.cpu_offload(text_encoder_one)
-        text_encoder_two = accelerate.cpu_offload(text_encoder_two)
+        # print("Offloading text encoders to cpu")
+        # text_encoder_one = accelerate.cpu_offload(text_encoder_one)
+        # text_encoder_two = accelerate.cpu_offload(text_encoder_two)
         if args.train_method == 'dpo':
             ref_unet.to(accelerator.device, dtype=weight_dtype)
-            print("offload ref_unet")
-            ref_unet = accelerate.cpu_offload(ref_unet)
+            # print("offload ref_unet")
+            # ref_unet = accelerate.cpu_offload(ref_unet)
     else:
         text_encoder.to(accelerator.device, dtype=weight_dtype)
         if args.train_method == 'dpo':
@@ -766,7 +811,7 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        tracker_config = dict(vars(args))
+        tracker_config = sanitize_tracker_config(vars(args))
         accelerator.init_trackers(args.tracker_project_name, tracker_config)
 
     # Training initialization
@@ -813,6 +858,13 @@ def main():
     progress_bar = tqdm(range(global_step, args.max_train_steps), disable=not accelerator.is_local_main_process)
     progress_bar.set_description("Steps")
 
+    null_input_ids = tokenizer(
+        [""],
+        padding="max_length",
+        max_length=tokenizer.model_max_length,
+        return_tensors="pt"
+    ).input_ids.to(accelerator.device)
+    null_encoder_hidden_states = text_encoder(null_input_ids)[0]
         
     #### START MAIN TRAINING LOOP #####
     for epoch in range(first_epoch, args.num_train_epochs):
@@ -851,13 +903,12 @@ def main():
                         (latents.shape[0], latents.shape[1], 1, 1), device=latents.device
                     )
                 if args.input_perturbation: # haven't tried yet
-                    perturbation = torch.randn_like(noise)
-                    new_noise = noise + args.input_perturbation * perturbation
+                    new_noise = noise + args.input_perturbation * torch.randn_like(noise)
                     
                 bsz = latents.shape[0]
                 # Sample a random timestep for each image
-                timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device)
-                timesteps = timesteps.long()
+                timesteps = batch["timesteps"]
+                timesteps = timesteps.long().to(device=latents.device)
                 # only first 20% timesteps for SDXL refiner
                 if 'refiner' in args.pretrained_model_name_or_path:
                     timesteps = timesteps % 200
@@ -865,15 +916,12 @@ def main():
                     timesteps_0_to_3 = timesteps % 4
                     timesteps = 250 * timesteps_0_to_3 + 249
                 
-                if args.train_method == 'dpo': # make timesteps and noise same for pairs in DPO
-                    timesteps = timesteps.chunk(2)[0].repeat(2)
+                # if args.train_method == 'dpo': # make timesteps and noise same for pairs in DPO
+                #     timesteps = timesteps.repeat(2)
+                #     noise = noise.chunk(2)[0].repeat(2, 1, 1, 1)
 
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
-                
-                new_noisy_latents = noise_scheduler.add_noise(latents,
-                                                          new_noise if args.input_perturbation else noise,
-                                                          timesteps)
                 
                 noisy_latents = noise_scheduler.add_noise(latents,
                                                           new_noise if args.input_perturbation else noise,
@@ -903,11 +951,18 @@ def main():
                                                          device=accelerator.device)[None, :].repeat(timesteps.size(0), 1)
                         prompt_batch = encode_prompt_sdxl(batch, 
                                                           text_encoders,
-                                                           tokenizers,
+                                                          [batch["pos_input_ids"], batch["pos_input_ids_2"]],
                                                            args.proportion_empty_prompts, 
                                                           caption_column='caption',
                                                            is_train=True,
                                                           )
+                        # prompt_batch = encode_prompt_sdxl(batch, 
+                        #                                   [batch["neg_input_ids"], batch["neg_input_ids_2"]],
+                        #                                    tokenizers,
+                        #                                    args.proportion_empty_prompts, 
+                        #                                   caption_column='caption',
+                        #                                    is_train=True,
+                        #                                   )
                     if args.train_method == 'dpo':
                         prompt_batch["prompt_embeds"] = prompt_batch["prompt_embeds"].repeat(2, 1, 1)
                         prompt_batch["pooled_prompt_embeds"] = prompt_batch["pooled_prompt_embeds"].repeat(2, 1)
@@ -915,61 +970,63 @@ def main():
                                             "text_embeds": prompt_batch["pooled_prompt_embeds"]}
                 else: # sd1.5
                     # Get the text embedding for conditioning
-                    encoder_hidden_states = text_encoder(batch["pos_input_ids"])[0]
+                    pos_encoder_hidden_states = text_encoder(batch["pos_input_ids"])[0]
                     neg_encoder_hidden_states = text_encoder(batch["neg_input_ids"])[0]
+                    batch_null_encoder_hidden_states = null_encoder_hidden_states.repeat(bsz, 1, 1)
                 #### END PREP BATCH ####
                         
                 assert noise_scheduler.config.prediction_type == "epsilon"
-               
-                # Make the prediction from the model we're learning
-                model_batch_args = (noisy_latents,
-                                    timesteps, 
-                                    prompt_batch["prompt_embeds"] if args.sdxl else encoder_hidden_states) #teacher, student 
-                model_batch_args_neg = (noisy_latents,
-                                    timesteps, 
-                                    prompt_batch["prompt_embeds"] if args.sdxl else neg_encoder_hidden_states) #teacher
-                
-                new_model_batch_args = (new_noisy_latents,
-                                    timesteps, 
-                                    prompt_batch["prompt_embeds"] if args.sdxl else encoder_hidden_states) #teacher
-                
                 added_cond_kwargs = unet_added_conditions if args.sdxl else None
                 
+                if args.sdxl:#TO DO
+                    raise NotImplementedError("SDXL DPO not implemented yet")
+                else:                    
+                    pos_batch_args = (noisy_latents, timesteps, pos_encoder_hidden_states)
+                    ref_neg_batch_args = (noisy_latents, timesteps, neg_encoder_hidden_states)
+                    ref_uncond_batch_args = (noisy_latents, timesteps, batch_null_encoder_hidden_states)
+
+                with torch.no_grad():
+                    ref_pos = ref_unet(
+                        *pos_batch_args,
+                        added_cond_kwargs=added_cond_kwargs
+                    ).sample.detach()
+                    
+                    ref_neg = ref_unet(
+                        *ref_neg_batch_args,
+                        added_cond_kwargs=added_cond_kwargs
+                    ).sample.detach()
+                    
+                    ref_pos_neg_target = torch.cat([ref_pos, ref_neg], dim=0)
+                    
+                    if args.pos_neg_score:
+                        reverse_ref_pos_neg_target = torch.cat([ref_neg, ref_pos], dim=0)
+                        cfg_target= reverse_ref_pos_neg_target + args.guidance_scale * (ref_pos_neg_target - reverse_ref_pos_neg_target)
+                    else:
+                        if args.guidance_scale != 1:
+                            ref_null = ref_unet(
+                                *ref_uncond_batch_args,
+                                added_cond_kwargs=added_cond_kwargs
+                            ).sample.detach()
+                            
+                            cfg_target = ref_null.repeat(2, 1, 1, 1) + args.guidance_scale * (ref_pos_neg_target - ref_null.repeat(2, 1, 1, 1))
+                        else:
+                            cfg_target = ref_pos_neg_target
+
+                    target = cfg_target
+                
+               
                 model_pred = unet(
-                                *model_batch_args,
+                                *pos_batch_args,
                                   added_cond_kwargs = added_cond_kwargs
                                  ).sample
-                
-            
-                with torch.no_grad(): # Get the reference policy (unet) prediction
-                    ref_pred = ref_unet(
-                                *model_batch_args,
-                                    added_cond_kwargs = added_cond_kwargs
-                                    ).sample.detach()
-                    
-                    neg_ref_pred = ref_unet(
-                                *model_batch_args_neg,
-                                    added_cond_kwargs = added_cond_kwargs
-                                    ).sample.detach()
-                    
-                    new_ref_pred = ref_unet(
-                                *new_model_batch_args,
-                                    added_cond_kwargs = added_cond_kwargs
-                                    ).sample.detach()
-                
                 #### START LOSS COMPUTATION ####
                 if args.train_method == 'sft': # SFT, casting for F.mse_loss
-                    loss = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")
+                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
                 elif args.train_method == 'dpo':
-                    target = torch.cat([
-                            new_ref_pred - args.input_perturbation * perturbation,
-                            neg_ref_pred
-                        ], dim=0).detach()
-                    model_pred = model_pred.repeat(2, 1, 1, 1)
                     # model_pred and ref_pred will be (2 * LBS) x 4 x latent_spatial_dim x latent_spatial_dim
                     # losses are both 2 * LBS
                     # 1st half of tensors is preferred (y_w), second half is unpreferred
-                    model_losses = (model_pred - target).pow(2).mean(dim=[1,2,3])
+                    model_losses = (model_pred.repeat(2, 1, 1, 1) - target).pow(2).mean(dim=[1,2,3])
                     model_losses_w, model_losses_l = model_losses.chunk(2)
                     # below for logging purposes
                     raw_model_loss = 0.5 * (model_losses_w.mean() + model_losses_l.mean())
@@ -977,8 +1034,7 @@ def main():
                     model_diff = model_losses_w - model_losses_l # These are both LBS (as is t)
                     
                     with torch.no_grad(): # Get the reference policy (unet) prediction
-                        ref_pred = ref_pred.repeat(2, 1, 1, 1)
-                        ref_losses = (ref_pred - target).pow(2).mean(dim=[1,2,3])
+                        ref_losses = (ref_pos.repeat(2, 1, 1, 1) - target).pow(2).mean(dim=[1,2,3])
                         ref_losses_w, ref_losses_l = ref_losses.chunk(2)
                         ref_diff = ref_losses_w - ref_losses_l
                         raw_ref_loss = ref_losses.mean()    
@@ -1070,6 +1126,7 @@ def main():
                 vae=vae,
                 unet=unet,
                 revision=args.revision,
+                cache_dir=args.cache_dir
             )
         pipeline.save_pretrained(args.output_dir)
 

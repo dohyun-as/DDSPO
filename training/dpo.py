@@ -388,30 +388,11 @@ def parse_args():
 
 
 # Adapted from pipelines.StableDiffusionXLPipeline.encode_prompt
-def encode_prompt_sdxl(batch, text_encoders, tokenizers, proportion_empty_prompts, caption_column, is_train=True):
+def encode_prompt_sdxl(batch, text_encoders, text_inputs_list, proportion_empty_prompts, caption_column, is_train=True):
     prompt_embeds_list = []
-    prompt_batch = batch[caption_column]
-
-    captions = []
-    for caption in prompt_batch:
-        if random.random() < proportion_empty_prompts:
-            captions.append("")
-        elif isinstance(caption, str):
-            captions.append(caption)
-        elif isinstance(caption, (list, np.ndarray)):
-            # take a random caption if there are multiple
-            captions.append(random.choice(caption) if is_train else caption[0])
 
     with torch.no_grad():
-        for tokenizer, text_encoder in zip(tokenizers, text_encoders):
-            text_inputs = tokenizer(
-                captions,
-                padding="max_length",
-                max_length=tokenizer.model_max_length,
-                truncation=True,
-                return_tensors="pt",
-            )
-            text_input_ids = text_inputs.input_ids
+        for text_input_ids, text_encoder in zip(text_inputs_list, text_encoders):
             prompt_embeds = text_encoder(
                 text_input_ids.to('cuda'),
                 output_hidden_states=True,
@@ -477,7 +458,7 @@ def main():
     ### START DIFFUSION BOILERPLATE ###
     # Load scheduler, tokenizer and models.
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, 
-                                                    subfolder="scheduler")
+                                                    subfolder="scheduler", cache_dir=args.cache_dir)
     def enforce_zero_terminal_snr(scheduler):
         # Modified from https://arxiv.org/pdf/2305.08891.pdf
         # Turbo needs zero terminal SNR to truly learn from noise
@@ -513,14 +494,14 @@ def main():
         else:
             tokenizer_and_encoder_name = args.pretrained_model_name_or_path
         tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_and_encoder_name, subfolder="tokenizer", revision=args.revision, use_fast=False
+            tokenizer_and_encoder_name, subfolder="tokenizer", revision=args.revision, use_fast=False, cache_dir=args.cache_dir
         )
         tokenizer_2 = AutoTokenizer.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="tokenizer_2", revision=args.revision, use_fast=False
+            args.pretrained_model_name_or_path, subfolder="tokenizer_2", revision=args.revision, use_fast=False, cache_dir=args.cache_dir
         )
     else:
         tokenizer = CLIPTokenizer.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
+            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision, cache_dir=args.cache_dir
         )
         tokenizer_2 = None
 
@@ -558,10 +539,10 @@ def main():
                 tokenizer_and_encoder_name, args.revision, subfolder="text_encoder_2"
             )
             text_encoder_one = text_encoder_cls_one.from_pretrained(
-                tokenizer_and_encoder_name, subfolder="text_encoder", revision=args.revision
+                tokenizer_and_encoder_name, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
             )
             text_encoder_two = text_encoder_cls_two.from_pretrained(
-                args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision
+                args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision, cache_dir=args.cache_dir
             )
             if args.pretrained_model_name_or_path=="stabilityai/stable-diffusion-xl-refiner-1.0":
                 text_encoders = [text_encoder_two]
@@ -571,7 +552,7 @@ def main():
                 tokenizers = [tokenizer, tokenizer_2]
         else:
             text_encoder = CLIPTextModel.from_pretrained(
-                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
             )
         # Can custom-select VAE (used in original SDXL tuning)
         vae_path = (
@@ -580,17 +561,17 @@ def main():
             else args.pretrained_vae_model_name_or_path
         )
         vae = AutoencoderKL.from_pretrained(
-            vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision
+            vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir
         )
         # clone of model
         ref_unet = UNet2DConditionModel.from_pretrained(
             args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
-            subfolder="unet", revision=args.revision
+            subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
         )
     if args.unet_init:
         print("Initializing unet from", args.unet_init)
     unet = UNet2DConditionModel.from_pretrained(
-        args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision
+        args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
     )
 
     # Freeze vae, text_encoder(s), reference unet
@@ -742,13 +723,13 @@ def main():
         text_encoder_two.to(accelerator.device, dtype=weight_dtype)
         print("offload vae (this actually stays as CPU)")
         vae = accelerate.cpu_offload(vae)
-        print("Offloading text encoders to cpu")
-        text_encoder_one = accelerate.cpu_offload(text_encoder_one)
-        text_encoder_two = accelerate.cpu_offload(text_encoder_two)
+        # print("Offloading text encoders to cpu")
+        # text_encoder_one = accelerate.cpu_offload(text_encoder_one)
+        # text_encoder_two = accelerate.cpu_offload(text_encoder_two)
         if args.train_method == 'dpo':
             ref_unet.to(accelerator.device, dtype=weight_dtype)
-            print("offload ref_unet")
-            ref_unet = accelerate.cpu_offload(ref_unet)
+            # print("offload ref_unet")
+            # ref_unet = accelerate.cpu_offload(ref_unet)
     else:
         text_encoder.to(accelerator.device, dtype=weight_dtype)
         if args.train_method == 'dpo':
@@ -899,11 +880,18 @@ def main():
                                                          device=accelerator.device)[None, :].repeat(timesteps.size(0), 1)
                         prompt_batch = encode_prompt_sdxl(batch, 
                                                           text_encoders,
-                                                           tokenizers,
+                                                          [batch["pos_input_ids"], batch["pos_input_ids_2"]],
                                                            args.proportion_empty_prompts, 
                                                           caption_column='caption',
                                                            is_train=True,
                                                           )
+                        # prompt_batch = encode_prompt_sdxl(batch, 
+                        #                                   [batch["neg_input_ids"], batch["neg_input_ids_2"]],
+                        #                                    tokenizers,
+                        #                                    args.proportion_empty_prompts, 
+                        #                                   caption_column='caption',
+                        #                                    is_train=True,
+                        #                                   )
                     if args.train_method == 'dpo':
                         prompt_batch["prompt_embeds"] = prompt_batch["prompt_embeds"].repeat(2, 1, 1)
                         prompt_batch["pooled_prompt_embeds"] = prompt_batch["pooled_prompt_embeds"].repeat(2, 1)
@@ -1030,7 +1018,7 @@ def main():
                 torch_dtype=weight_dtype,
             )
             pipeline = StableDiffusionXLPipeline.from_pretrained(
-                args.pretrained_model_name_or_path, unet=unet, vae=vae, revision=args.revision, torch_dtype=weight_dtype
+                args.pretrained_model_name_or_path, unet=unet, vae=vae, revision=args.revision, torch_dtype=weight_dtype, cache_dir=args.cache_dir
             )
             pipeline.save_pretrained(args.output_dir)
         else:
@@ -1040,6 +1028,7 @@ def main():
                 vae=vae,
                 unet=unet,
                 revision=args.revision,
+                cache_dir=args.cache_dir
             )
         pipeline.save_pretrained(args.output_dir)
 

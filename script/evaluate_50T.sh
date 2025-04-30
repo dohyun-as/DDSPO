@@ -43,73 +43,17 @@
 #!/bin/bash
 
 # Set GPU info
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
-NUM_GPUS=6 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+CUDA_VISIBLE_DEVICES=2,3 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 # List of result directories to evaluate
 RESULT_PATHS=(
-    "./results/dpo_method_2/checkpoint-100"
-    "./results/dpo_method_2/checkpoint-200"
-    "./results/dpo_method_2/checkpoint-300"
-    "./results/dpo_method_2/checkpoint-400"
-    "./results/dpo_method_2/checkpoint-500"
-    "./results/dpo_method_2/checkpoint-600"
-    "./results/dpo_method_2/checkpoint-700"
-    "./results/dpo_method_2/checkpoint-800"
-    "./results/dpo_method_2/checkpoint-900"
-    "./results/dpo_method_2/checkpoint-1000"
-    "./results/dpo_method_2/checkpoint-1100"
-    "./results/dpo_method_2/checkpoint-1200"
-    "./results/dpo_method_2/checkpoint-1300"
-    "./results/dpo_method_2/checkpoint-1400"
-    "./results/dpo_method_2/checkpoint-1500"
-    "./results/dpo_method_2/checkpoint-1600"
-    "./results/dpo_method_2/checkpoint-1700"
-    "./results/dpo_method_2/checkpoint-1800"
-    "./results/dpo_method_2/checkpoint-1900"
-    "./results/dpo_method_2/checkpoint-2000"
-    "./results/dpo_method_2_up/checkpoint-100"
-    "./results/dpo_method_2_up/checkpoint-200"
-    "./results/dpo_method_2_up/checkpoint-300"
-    "./results/dpo_method_2_up/checkpoint-400"
-    "./results/dpo_method_2_up/checkpoint-500"
-    "./results/dpo_method_2_up/checkpoint-600"
-    "./results/dpo_method_2_up/checkpoint-700"
-    "./results/dpo_method_2_up/checkpoint-800"
-    "./results/dpo_method_2_up/checkpoint-900"
-    "./results/dpo_method_2_up/checkpoint-1000"
-    "./results/dpo_method_2_up/checkpoint-1100"
-    "./results/dpo_method_2_up/checkpoint-1200"
-    "./results/dpo_method_2_up/checkpoint-1300"
-    "./results/dpo_method_2_up/checkpoint-1400"
-    "./results/dpo_method_2_up/checkpoint-1500"
-    "./results/dpo_method_2_up/checkpoint-1600"
-    "./results/dpo_method_2_up/checkpoint-1700"
-    "./results/dpo_method_2_up/checkpoint-1800"
-    "./results/dpo_method_2_up/checkpoint-1900"
-    "./results/dpo_method_2_up/checkpoint-2000"
-    "./results/dpo_method_1/checkpoint-100"
-    "./results/dpo_method_1/checkpoint-200"
-    "./results/dpo_method_1/checkpoint-300"
-    "./results/dpo_method_1/checkpoint-400"
-    "./results/dpo_method_1/checkpoint-500"
-    "./results/dpo_method_1/checkpoint-600"
-    "./results/dpo_method_1/checkpoint-700"
-    "./results/dpo_method_1/checkpoint-800"
-    "./results/dpo_method_1/checkpoint-900"
-    "./results/dpo_method_1/checkpoint-1000"
-    "./results/dpo_method_1/checkpoint-1100"
-    "./results/dpo_method_1/checkpoint-1200"
-    "./results/dpo_method_1/checkpoint-1300"
-    "./results/dpo_method_1/checkpoint-1400"
-    "./results/dpo_method_1/checkpoint-1500"
-    "./results/dpo_method_1/checkpoint-1600"
-    "./results/dpo_method_1/checkpoint-1700"
-    "./results/dpo_method_1/checkpoint-1800"
-    "./results/dpo_method_1/checkpoint-1900"
-    "./results/dpo_method_1/checkpoint-2000"
+    "/workspace/data_config_DB_200k_50T/checkpoint-100"
+    "/workspace/data_config_DB_200k_50T/checkpoint-200"
+    "/workspace/data_config_DB_200k_50T/checkpoint-300"
 )
 
+    # "./results/stdpo_base_cfg_randcond/checkpoint-100"
 for RESULT_DIR in "${RESULT_PATHS[@]}"; do
     OUTDIR="${RESULT_DIR}/geneval_img"
     OUTFILE="${RESULT_DIR}/geneval_results.jsonl"
@@ -123,14 +67,14 @@ for RESULT_DIR in "${RESULT_PATHS[@]}"; do
     --unet_path "$UNET_PATH" \
     --batch_size 4 \
     --scale 7.5 \
+    --steps 25 \
     --cache_dir "./cache"
     "
 
     COMMON_ARGS2="$OUTDIR \
-        --outfile "$OUTFILE" \
-        --model-path "$DETECTOR" \
-        --cache_dir "./cache"
-        "
+    --outfile "$OUTFILE" \
+    --model-path "$DETECTOR"
+    "
 
     echo "🔁 Running generation and evaluation for: $RESULT_DIR"
 

@@ -101,13 +101,17 @@ def main():
         scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", cache_dir=opt.cache_dir)
         pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
 
-        pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
-        pipe.unet = pipe.unet.to(torch.float16).to("cuda")
+
+        if opt.ckpt is not None:
+            pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
+            pipe.unet = pipe.unet.to(torch.float16).to("cuda")
 
     else:
         pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, cache_dir=opt.cache_dir)
-        pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
-        pipe.unet = pipe.unet.to(torch.float16).to("cuda")
+        
+        if opt.ckpt is not None:
+            pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
+            pipe.unet = pipe.unet.to(torch.float16).to("cuda")
         
     pipe.to(accelerator.device)
     

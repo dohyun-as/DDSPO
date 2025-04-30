@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from tqdm import tqdm
 
 import torch
 import numpy as np
@@ -160,6 +161,11 @@ def parse_args():
         default=None,
         help="Optional path to a custom cache directory for Hugging Face models.",
     )
+    parser.add_argument(
+        "--SDXL",
+        action="store_true",
+        help="SDXL",
+    )
     opt = parser.parse_args()
     return opt
 
@@ -188,8 +194,11 @@ def generate_with_accelerator(accelerator, pipe, opt):
         os.makedirs(opt.outdir, exist_ok=True)
         
     accelerator.wait_for_everyone()
+    metadata_iter = (
+        tqdm(my_metadata, desc="Processing") if accelerator.is_local_main_process else my_metadata
+    )
 
-    for local_idx, metadata in enumerate(my_metadata):
+    for local_idx, metadata in enumerate(metadata_iter):
         
         global_idx = start_idx + local_idx
         folder_name = f"{global_idx + 1:05d}"
@@ -208,7 +217,7 @@ def generate_with_accelerator(accelerator, pipe, opt):
         batch_size = opt.batch_size
         all_samples = [] if not opt.skip_grid else None
         with torch.no_grad():
-            for _ in trange((opt.n_samples + batch_size - 1) // batch_size, disable=not accelerator.is_main_process):
+            for _ in range((opt.n_samples + batch_size - 1) // batch_size):
                 current_bs = min(batch_size, opt.n_samples - sample_count)
                 images = pipe(
                     prompt,
@@ -234,7 +243,7 @@ def generate_with_accelerator(accelerator, pipe, opt):
                 grid = (255. * grid.permute(1, 2, 0).cpu().numpy()).astype("uint8")
                 Image.fromarray(grid).save(os.path.join(outpath, "grid.png"))
 
-        accelerator.wait_for_everyone()
+    accelerator.wait_for_everyone()
     if accelerator.is_local_main_process:
         print("Done.")
 # ------------------------------------------------------------------------------
@@ -245,7 +254,7 @@ def main(opt):
     seed_everything(opt.seed + accelerator.process_index)
 
     # Load model
-    if opt.model.lower().startswith("stabilityai/stable-diffusion-xl"):
+    if opt.model.lower().startswith("stabilityai/stable-diffusion-xl") or opt.SDXL:
         pipe = DiffusionPipeline.from_pretrained(
             opt.model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16", cache_dir=opt.cache_dir
         )
