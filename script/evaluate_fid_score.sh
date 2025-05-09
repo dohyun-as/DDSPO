@@ -6,20 +6,11 @@
 #   for CLIP score, https://github.com/mlfoundations/open_clip
 # ------------------------------------------------------------------------------------
 
-CUDA_VISIBLE_DEVICES=4
+CUDA_VISIBLE_DEVICES=0
 NUM_GPUS=1
 
 RESULT_PATHS=(
-    "./results/hypertuning/only_cfg_g1_variant4_replace_neg_with_other_pos/checkpoint-100"
-    "./results/hypertuning/only_cfg_g1_variant4_replace_neg_with_other_pos/checkpoint-200"
-    "./results/hypertuning/only_cfg_g1_variant4_replace_neg_with_other_pos/checkpoint-300"
-    "./results/hypertuning/only_cfg_g1_variant4_replace_neg_with_other_pos/checkpoint-400"
-    "./results/hypertuning/only_cfg_g1_variant4_replace_neg_with_other_pos/checkpoint-500"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-100"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-200"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-300"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-400"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-500"
+    "./results/SDXL/dpo_beta8k/checkpoint-100"
 )
 
 

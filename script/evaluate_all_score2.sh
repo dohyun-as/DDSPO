@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # Set GPU info
-CUDA_VISIBLE_DEVICES=7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+CUDA_VISIBLE_DEVICES=1 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=1 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 # List of result directories to evaluate
 RESULT_PATHS=(
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-100"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-200"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-300"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-400"
-    "./results/hypertuning/only_cfg_g1_variant4_beta_random_neg_prompts/checkpoint-500"
+    "./results/aesthetic/our_beta16k/checkpoint-100"
+    "./results/aesthetic/our_beta16k/checkpoint-200"
+    "./results/aesthetic/our_beta16k/checkpoint-300"
+    "./results/aesthetic/our_beta16k/checkpoint-400"
+    "./results/aesthetic/our_beta16k/checkpoint-500"
 )
 
 
@@ -66,94 +66,94 @@ done
 
 
 
-evaluate_project() {
-  local project_dir=$1     # e.g. "BLIPvqa_eval"
-  local eval_script=$2     # e.g. "BLIP_vqa.py"
-  local out_dir=$3         # output directory
+# evaluate_project() {
+#   local project_dir=$1     # e.g. "BLIPvqa_eval"
+#   local eval_script=$2     # e.g. "BLIP_vqa.py"
+#   local out_dir=$3         # output directory
 
-  cd "evaluation/T2I-CompBench/$project_dir" || exit 1
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python "$eval_script" --out_dir="$out_dir"
-  cd - || exit 1
-}
-evaluate_project_path() {
-  local project_dir=$1     # e.g. "BLIPvqa_eval"
-  local eval_script=$2     # e.g. "BLIP_vqa.py"
-  local out_dir=$3         # output directory
+#   cd "evaluation/T2I-CompBench/$project_dir" || exit 1
+#   CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python "$eval_script" --out_dir="$out_dir"
+#   cd - || exit 1
+# }
+# evaluate_project_path() {
+#   local project_dir=$1     # e.g. "BLIPvqa_eval"
+#   local eval_script=$2     # e.g. "BLIP_vqa.py"
+#   local out_dir=$3         # output directory
 
-  cd "evaluation/T2I-CompBench/$project_dir" || exit 1
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python "$eval_script" --outpath="$out_dir"
-  cd - || exit 1
-}
+#   cd "evaluation/T2I-CompBench/$project_dir" || exit 1
+#   CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python "$eval_script" --outpath="$out_dir"
+#   cd - || exit 1
+# }
 
-# ---------------------------------------------------------
-# List of directories to evaluate
-# ---------------------------------------------------------
+# # ---------------------------------------------------------
+# # List of directories to evaluate
+# # ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 실행
-# ---------------------------------------------------------
-for out_dir_base in "${RESULT_PATHS[@]}"; do
-  echo "Starting evaluation for $out_dir_base..."
-  out_dir_base=$(readlink -f "$out_dir_base")
-  # -------------------------------------------------------
-  # Step 1: BLIP_vqa evaluation (color, shape, texture, complex)
-  # -------------------------------------------------------
-  echo "Starting BLIP_vqa evaluation..."
+# # ---------------------------------------------------------
+# # 실행
+# # ---------------------------------------------------------
+# for out_dir_base in "${RESULT_PATHS[@]}"; do
+#   echo "Starting evaluation for $out_dir_base..."
+#   out_dir_base=$(readlink -f "$out_dir_base")
+#   # -------------------------------------------------------
+#   # Step 1: BLIP_vqa evaluation (color, shape, texture, complex)
+#   # -------------------------------------------------------
+#   echo "Starting BLIP_vqa evaluation..."
 
-  # color
-  out_dir="$out_dir_base/compbench_img/color"
-  evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
+#   # color
+#   out_dir="$out_dir_base/compbench_img/color"
+#   evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
 
-  # shape
-  out_dir="$out_dir_base/compbench_img/shape"
-  evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
+#   # shape
+#   out_dir="$out_dir_base/compbench_img/shape"
+#   evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
 
-  # texture
-  out_dir="$out_dir_base/compbench_img/texture"
-  evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
+#   # texture
+#   out_dir="$out_dir_base/compbench_img/texture"
+#   evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
 
-  # complex
-  out_dir="$out_dir_base/compbench_img/complex"
-  evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
+#   # complex
+#   out_dir="$out_dir_base/compbench_img/complex"
+#   evaluate_project "BLIPvqa_eval" "BLIP_vqa.py" "$out_dir"
 
-  # -------------------------------------------------------
-  # Step 2: UniDet_eval (spatial, complex)
-  # -------------------------------------------------------
-  echo "Starting UniDet_eval evaluation..."
+#   # -------------------------------------------------------
+#   # Step 2: UniDet_eval (spatial, complex)
+#   # -------------------------------------------------------
+#   echo "Starting UniDet_eval evaluation..."
 
-  # spatial
-  out_dir="$out_dir_base/compbench_img/spatial"
-  evaluate_project_path "UniDet_eval" "2D_spatial_eval.py" "$out_dir"
+#   # spatial
+#   out_dir="$out_dir_base/compbench_img/spatial"
+#   evaluate_project_path "UniDet_eval" "2D_spatial_eval.py" "$out_dir"
 
-  # complex (2D_spatial_eval.py)
-  out_dir="$out_dir_base/compbench_img/complex"
-  evaluate_project_path "UniDet_eval" "2D_spatial_eval.py" "$out_dir"
-  # -------------------------------------------------------
-  # Step 3: CLIPScore_eval (non_spatial, complex)
-  # -------------------------------------------------------
-  echo "Starting CLIPScore evaluation..."
+#   # complex (2D_spatial_eval.py)
+#   out_dir="$out_dir_base/compbench_img/complex"
+#   evaluate_project_path "UniDet_eval" "2D_spatial_eval.py" "$out_dir"
+#   # -------------------------------------------------------
+#   # Step 3: CLIPScore_eval (non_spatial, complex)
+#   # -------------------------------------------------------
+#   echo "Starting CLIPScore evaluation..."
 
-  # non_spatial
-  out_dir="$out_dir_base/compbench_img/non_spatial"
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python evaluation/T2I-CompBench/CLIPScore_eval/CLIP_similarity.py --outpath="$out_dir"
+#   # non_spatial
+#   out_dir="$out_dir_base/compbench_img/non_spatial"
+#   CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python evaluation/T2I-CompBench/CLIPScore_eval/CLIP_similarity.py --outpath="$out_dir"
 
-  # complex
-  out_dir="$out_dir_base/compbench_img/complex"
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python evaluation/T2I-CompBench/CLIPScore_eval/CLIP_similarity.py --outpath="$out_dir"
+#   # complex
+#   out_dir="$out_dir_base/compbench_img/complex"
+#   CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} /workspace/miniconda3/bin/conda run -n compbench python evaluation/T2I-CompBench/CLIPScore_eval/CLIP_similarity.py --outpath="$out_dir"
 
-  # -------------------------------------------------------
-  # Step 4: 3_in_1_eval (complex)
-  # -------------------------------------------------------
-  echo "Starting 3_in_1_eval evaluation..."
+#   # -------------------------------------------------------
+#   # Step 4: 3_in_1_eval (complex)
+#   # -------------------------------------------------------
+#   echo "Starting 3_in_1_eval evaluation..."
 
-  out_dir="$out_dir_base/compbench_img/complex"
-  evaluate_project_path "3_in_1_eval" "3_in_1.py" "$out_dir"
+#   out_dir="$out_dir_base/compbench_img/complex"
+#   evaluate_project_path "3_in_1_eval" "3_in_1.py" "$out_dir"
 
-  echo "Evaluation for $out_dir_base completed successfully!"
+#   echo "Evaluation for $out_dir_base completed successfully!"
   
-  OUTFILES+=("$out_dir_base/compbench_img")
-done
+#   OUTFILES+=("$out_dir_base/compbench_img")
+# done
 
-python evaluation/compbench_score.py "${OUTFILES[@]}" --output compbench_score2.csv
-echo "All evaluations completed successfully!"
+# python evaluation/compbench_score.py "${OUTFILES[@]}" --output compbench_score2.csv
+# echo "All evaluations completed successfully!"
 

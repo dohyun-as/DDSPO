@@ -7,13 +7,16 @@
 CUDA_VISIBLE_DEVICES=0,1 # $(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=2 # $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
-COMMON_ARGS="--json_file "./data/captions/diffusiondb_aesthetic_llama/diffusiondb_aesthetic_llama.jsonl" \
---save_dir "./data/latents/diffusiondb_aesthetic_200k/" \
+COMMON_ARGS="--json_file "./data/captions/diffusiondb_removal/diffusiondb_removal.jsonl" \
+--save_dir "./data/latents/SANA_diffusiondb_removal_200k/" \
 --num_samples 200000 \
---batch_size 128 \
+--batch_size 64 \
 --save_type "latent" \
---num_inference_steps 25 \
---cache_dir "./cache"
+--num_inference_steps 20 \
+--cache_dir "./cache" \
+--model_name "Efficient-Large-Model/Sana_600M_1024px_diffusers" \
+--cfg "4.5" \
+--SANA
 "
 
 if [ ${NUM_GPUS} -gt 1 ]; then

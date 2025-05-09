@@ -11,6 +11,8 @@ from accelerate import Accelerator
 from diffusers import StableDiffusionPipeline
 from safetensors.torch import save_file
 
+def custom_collate_fn(batch):
+    return list(zip(*batch))
 
 class JsonDataset(Dataset):
     def __init__(self, json_file):
@@ -28,10 +30,11 @@ class JsonDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
         prompt = item["prompt"]
-        neg_prompt = random.choice(item["neg_prompts"])
+        neg_prompt_list = item["neg_prompts"]
+        neg_prompt = random.choice(neg_prompt_list)
         sample_id = item["id"]
         tag = item.get("tag", "")
-        return sample_id, tag, prompt, neg_prompt
+        return sample_id, tag, prompt, neg_prompt, neg_prompt_list
 
 
 def generate_images(args, pipeline, dataloader, save_dir, metadata_file, device, accelerator, save_type="latent"):
@@ -39,7 +42,7 @@ def generate_images(args, pipeline, dataloader, save_dir, metadata_file, device,
     output_type = "latent" if save_type == "latent" else "pil"
 
     for batch in tqdm(dataloader, desc="Generating images"):
-        ids, tag, prompts, neg_prompts = batch
+        ids, tag, prompts, neg_prompts, all_neg_prompts_list = batch
         ids = list(ids)
         prompts = list(prompts)
         neg_prompts = list(neg_prompts)
@@ -68,7 +71,7 @@ def generate_images(args, pipeline, dataloader, save_dir, metadata_file, device,
             output_type=output_type
         ).images
 
-        for sample_id, tag, prompt, neg_prompt, out_pos, out_neg in zip(ids, tags, prompts, neg_prompts, outs_pos, outs_neg):
+        for sample_id, tag, prompt, neg_prompt, out_pos, out_neg, all_neg_prompts in zip(ids, tags, prompts, neg_prompts, outs_pos, outs_neg, all_neg_prompts_list):
             if save_type == "latent":
                 pos_path = os.path.join(save_dir, "latents", f"{sample_id}.safetensors")
                 neg_path = os.path.join(save_dir, "latents", f"{sample_id}_neg.safetensors")
@@ -88,7 +91,7 @@ def generate_images(args, pipeline, dataloader, save_dir, metadata_file, device,
                 "neg_prompt": neg_prompt,
                 "pos_file": Path(pos_path).name,
                 "neg_file": Path(neg_path).name,
-                # "all_neg_prompts": neg_prompts
+                "all_neg_prompts": all_neg_prompts
             })
 
         accelerator.wait_for_everyone()
@@ -123,6 +126,8 @@ def parse_args():
     parser.add_argument("--cache_dir",type=str,default=None, 
                         help="The directory where the downloaded models and datasets will be stored.")
     parser.add_argument("--SDXL", action="store_true", help="SDXL")
+    parser.add_argument("--SANA", action="store_true", help="SANA")
+    parser.add_argument("--bf16", action="store_true", help="use bf16")
 
 
     args = parser.parse_args()
@@ -156,7 +161,7 @@ def main():
     print("len(dataset) original", len(dataset))
 
     existing_ids = set()
-    if os.path.exists(args.prev_metadata_file):
+    if args.prev_metadata_file and os.path.exists(args.prev_metadata_file):
         with open(args.prev_metadata_file, "r") as f:
             for line in f:
                 try:
@@ -178,7 +183,7 @@ def main():
         dataset = Subset(dataset, indices)
         print("len(dataset) sampled", len(dataset))
         
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn, num_workers=4)
     dataloader = accelerator.prepare(dataloader)
 
     # Load model
@@ -186,6 +191,17 @@ def main():
         from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
         scheduler = EulerDiscreteScheduler.from_pretrained(args.model_name, subfolder="scheduler", cache_dir=args.cache_dir)
         pipe = StableDiffusionXLPipeline.from_pretrained(args.model_name, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=args.cache_dir).to(device)
+    
+    elif args.SANA:
+        from diffusers import SanaPipeline
+        if args.bf16:
+            pipe = SanaPipeline.from_pretrained(args.model_name, torch_dtype=torch.bfloat16, variant="bf16", cache_dir=args.cache_dir).to(device)
+
+        else:
+            pipe = SanaPipeline.from_pretrained(args.model_name, torch_dtype=torch.float16, variant="fp16", cache_dir=args.cache_dir).to(device)
+
+        pipe.vae.to(torch.bfloat16)
+        pipe.text_encoder.to(torch.bfloat16)
 
     else:
         pipe = StableDiffusionPipeline.from_pretrained(args.model_name, safety_checker=None, cache_dir=args.cache_dir, torch_dtype=torch.float16).to(device)

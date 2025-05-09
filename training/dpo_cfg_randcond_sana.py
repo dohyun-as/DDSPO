@@ -21,6 +21,7 @@ import os
 import random
 import shutil
 import sys
+import copy
 from pathlib import Path
 
 import accelerate
@@ -41,16 +42,28 @@ from huggingface_hub import create_repo, upload_folder
 from packaging import version
 from torchvision import transforms
 from tqdm.auto import tqdm
-from transformers import CLIPTextModel, CLIPTokenizer
+from transformers import CLIPTextModel, CLIPTokenizer, AutoTokenizer, Gemma2Model
 from transformers.utils import ContextManagers
 
 import diffusers
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel,     StableDiffusionXLPipeline
+from diffusers import (
+    AutoencoderDC,
+    FlowMatchEulerDiscreteScheduler,
+    SanaPipeline,
+    SanaTransformer2DModel,
+)
+from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel,StableDiffusionXLPipeline
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, deprecate, is_wandb_available, make_image_grid
 from diffusers.utils.import_utils import is_xformers_available
+from diffusers.training_utils import (
+    cast_training_params,
+    compute_density_for_timestep_sampling,
+    compute_loss_weighting_for_sd3,
+    free_memory,
+)
 
-from dataset import self_training_dataset, collate_fn
+from dataset_sana import self_training_dataset, collate_fn
 
 if is_wandb_available():
     import wandb
@@ -340,6 +353,21 @@ def parse_args():
         help="Path to pretrained VAE model with better numerical stability. More details: https://github.com/huggingface/diffusers/pull/4038.",
     )
     parser.add_argument("--sdxl", action='store_true', help="Train sdxl")
+    parser.add_argument("--sana", action='store_true', help="Train sana")
+    
+    parser.add_argument(
+        "--complex_human_instruction", type=str, default=(
+        "- 'Given a user prompt, generate an \"Enhanced prompt\" that provides detailed visual descriptions suitable for image generation. Evaluate the level of detail in the user prompt:'\n"
+        "- '- If the prompt is simple, focus on adding specifics about colors, shapes, sizes, textures, and spatial relationships to create vivid and concrete scenes.'\n"
+        "- '- If the prompt is already detailed, refine and enhance the existing details slightly without overcomplicating.'\n"
+        "- 'Here are examples of how to transform or refine prompts:'\n"
+        "- '- User Prompt: A cat sleeping -> Enhanced: A small, fluffy white cat curled up in a round shape, sleeping peacefully on a warm sunny windowsill, surrounded by pots of blooming red flowers.'\n"
+        "- '- User Prompt: A busy city street -> Enhanced: A bustling city street scene at dusk, featuring glowing street lamps, a diverse crowd of people in colorful clothing, and a double-decker bus passing by towering glass skyscrapers.'\n"
+        "- 'Please generate only the enhanced description for the prompt below and avoid including any additional commentary or evaluations:'\n"
+        "- 'User Prompt: '"
+    )
+    )
+    
     
     ## DPO
     parser.add_argument("--sft", action='store_true', help="Run Supervised Fine-Tuning instead of Direct Preference Optimization")
@@ -421,10 +449,6 @@ def parse_args():
     parser.add_argument(
         "--pos_neg_different_noise", action="store_true", help="use different noise for positive and negative images"
     )
-    parser.add_argument(
-        "--loss_weighting", type=str, default=None, help="use loss weighting: linear, sigmoid"
-    )
-    
     
     
     args = parser.parse_args()
@@ -528,7 +552,13 @@ def main():
     
     ### START DIFFUSION BOILERPLATE ###
     # Load scheduler, tokenizer and models.
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, 
+    if args.sana:
+        noise_scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="scheduler", revision=args.revision
+        )
+        noise_scheduler_copy = copy.deepcopy(noise_scheduler)
+    else:
+        noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, 
                                                     subfolder="scheduler", cache_dir=args.cache_dir)
     def enforce_zero_terminal_snr(scheduler):
         # Modified from https://arxiv.org/pdf/2305.08891.pdf
@@ -570,6 +600,13 @@ def main():
         tokenizer_2 = AutoTokenizer.from_pretrained(
             args.pretrained_model_name_or_path, subfolder="tokenizer_2", revision=args.revision, use_fast=False, cache_dir=args.cache_dir
         )
+        
+    elif args.sana:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision, cache_dir=args.cache_dir
+        )
+        tokenizer_2 = None
+        
     else:
         tokenizer = CLIPTokenizer.from_pretrained(
             args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision, cache_dir=args.cache_dir
@@ -621,6 +658,12 @@ def main():
             else:
                 text_encoders = [text_encoder_one, text_encoder_two]
                 tokenizers = [tokenizer, tokenizer_2]
+        elif args.sana:
+            text_encoder = Gemma2Model.from_pretrained(
+                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
+            )
+            
+            text_encoder.to(dtype=torch.bfloat16)
         else:
             text_encoder = CLIPTextModel.from_pretrained(
                 args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, cache_dir=args.cache_dir
@@ -631,19 +674,61 @@ def main():
             if args.pretrained_vae_model_name_or_path is None
             else args.pretrained_vae_model_name_or_path
         )
-        vae = AutoencoderKL.from_pretrained(
-            vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir
-        )
+        if args.sana:
+            vae = AutoencoderDC.from_pretrained(
+                vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir
+            )
+        else:
+            vae = AutoencoderKL.from_pretrained(
+                vae_path, subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None, revision=args.revision, cache_dir=args.cache_dir
+            )
         # clone of model
-        ref_unet = UNet2DConditionModel.from_pretrained(
-            args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
-            subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
-        )
+        
+        if args.sana:
+            ref_unet = SanaTransformer2DModel.from_pretrained(
+                args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
+                subfolder="transformer", revision=args.revision, cache_dir=args.cache_dir
+            )
+            text_encoding_pipeline = SanaPipeline.from_pretrained(
+                args.pretrained_model_name_or_path,
+                vae=None,
+                transformer=None,
+                text_encoder=text_encoder,
+                tokenizer=tokenizer,
+            )
+            
+        else:
+            ref_unet = UNet2DConditionModel.from_pretrained(
+                args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
+                subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
+            )
     if args.unet_init:
         print("Initializing unet from", args.unet_init)
-    unet = UNet2DConditionModel.from_pretrained(
-        args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
-    )
+    if args.sana:
+        unet = SanaTransformer2DModel.from_pretrained(
+                args.unet_init if args.unet_init else args.pretrained_model_name_or_path,
+                subfolder="transformer", revision=args.revision, cache_dir=args.cache_dir
+            )
+    else:
+        unet = UNet2DConditionModel.from_pretrained(
+            args.unet_init if args.unet_init else args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, cache_dir=args.cache_dir
+        )
+    
+    
+
+    def compute_text_embeddings(prompt, text_encoding_pipeline, weight_dtype=None):
+        text_encoding_pipeline = text_encoding_pipeline.to(accelerator.device)
+        with torch.no_grad():
+            prompt_embeds, prompt_attention_mask, _, _ = text_encoding_pipeline.encode_prompt(
+                prompt,
+                max_sequence_length=300,
+                complex_human_instruction=args.complex_human_instruction,
+            )
+        # print("complex_human_instruction", args.complex_human_instruction)
+        # if args.offload:
+        #     text_encoding_pipeline = text_encoding_pipeline.to("cpu")
+        prompt_embeds = prompt_embeds.to(weight_dtype)
+        return prompt_embeds, prompt_attention_mask
 
     # Freeze vae, text_encoder(s), reference unet
     vae.requires_grad_(False)
@@ -655,17 +740,17 @@ def main():
     if args.train_method == 'dpo': ref_unet.requires_grad_(False)
 
     # xformers efficient attention
-    if is_xformers_available():
-        import xformers
+    # if is_xformers_available():
+    #     import xformers
 
-        xformers_version = version.parse(xformers.__version__)
-        if xformers_version == version.parse("0.0.16"):
-            logger.warn(
-                "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
-            )
-        unet.enable_xformers_memory_efficient_attention()
-    else:
-        raise ValueError("xformers is not available. Make sure it is installed correctly")
+    #     xformers_version = version.parse(xformers.__version__)
+    #     if xformers_version == version.parse("0.0.16"):
+    #         logger.warn(
+    #             "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
+    #         )
+    #     unet.enable_xformers_memory_efficient_attention()
+    # else:
+    #     raise ValueError("xformers is not available. Make sure it is installed correctly")
 
     # BRAM NOTE: We're using >=0.16.0. Below was a bit of a bug hive. I hacked around it, but ideally ref_unet wouldn't
     # be getting passed here
@@ -812,6 +897,11 @@ def main():
             ref_unet.to(accelerator.device, dtype=weight_dtype)
             # print("offload ref_unet")
             # ref_unet = accelerate.cpu_offload(ref_unet)
+            
+    elif args.sana:
+        text_encoder.to(accelerator.device, dtype=torch.bfloat16)
+        ref_unet.to(accelerator.device, dtype=weight_dtype)
+      
     else:
         text_encoder.to(accelerator.device, dtype=weight_dtype)
         if args.train_method == 'dpo':
@@ -885,6 +975,17 @@ def main():
         ).input_ids.to(accelerator.device)
         null_encoder_hidden_states = text_encoder(null_input_ids)[0]
         
+    def get_sigmas(timesteps, n_dim=4, dtype=torch.float32):
+        sigmas = noise_scheduler_copy.sigmas.to(device=accelerator.device, dtype=dtype)
+        schedule_timesteps = noise_scheduler_copy.timesteps.to(accelerator.device)
+        timesteps = timesteps.to(accelerator.device)
+        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
+
+        sigma = sigmas[step_indices].flatten()
+        while len(sigma.shape) < n_dim:
+            sigma = sigma.unsqueeze(-1)
+        return sigma
+    
     #### START MAIN TRAINING LOOP #####
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
@@ -941,8 +1042,22 @@ def main():
 
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
-                
-                noisy_latents = noise_scheduler.add_noise(latents,
+                if args.sana:
+                        
+                    u_half = compute_density_for_timestep_sampling(
+                        weighting_scheme="none",
+                        batch_size=bsz//2,
+                        logit_mean=0.0,
+                        logit_std=1.0,
+                        mode_scale=1.29,
+                    )
+                    u = torch.cat([u_half, u_half], dim=0) 
+                    indices = (u * noise_scheduler_copy.config.num_train_timesteps).long()
+                    timesteps = noise_scheduler_copy.timesteps[indices].to(device=latents.device)
+                    sigmas = get_sigmas(timesteps, n_dim=latents.ndim, dtype=latents.dtype)
+                    noisy_latents = (1.0 - sigmas) * latents + sigmas * noise
+                else:
+                    noisy_latents = noise_scheduler.add_noise(latents,
                                                           new_noise if args.input_perturbation else noise,
                                                           timesteps)
                 ### START PREP BATCH ###
@@ -987,6 +1102,13 @@ def main():
                         prompt_batch["pooled_prompt_embeds"] = prompt_batch["pooled_prompt_embeds"].repeat(2, 1)
                     unet_added_conditions = {"time_ids": add_time_ids,
                                             "text_embeds": prompt_batch["pooled_prompt_embeds"]}
+                    
+                elif args.sana:
+                    pos_prompts = batch["pos_prompts"]
+                    neg_prompts = batch["neg_prompts"]
+                    pos_prompt_embeds, pos_prompt_attention_mask = compute_text_embeddings(pos_prompts, text_encoding_pipeline, weight_dtype)
+                    neg_prompt_embeds, neg_prompt_attention_mask = compute_text_embeddings(neg_prompts, text_encoding_pipeline, weight_dtype)
+                    
                 else: # sd1.5
                     # Get the text embedding for conditioning
                     encoder_hidden_states = text_encoder(batch["pos_input_ids"])[0]
@@ -995,15 +1117,17 @@ def main():
                         encoder_hidden_states = encoder_hidden_states.repeat(2, 1, 1)
                 #### END PREP BATCH ####
                         
-                assert noise_scheduler.config.prediction_type == "epsilon"
-                target = noise
+                # assert noise_scheduler.config.prediction_type == "epsilon"
+                if args.sana:
+                    target = noise - latents
+                else:
+                    target = noise
                 
                 if args.only_cfg:
                     batch["paireds"] = torch.zeros_like(batch["paireds"]) 
                 stdpo_mask = (batch["paireds"] == 0) # shape [bsz]
                 stdpo_indices = stdpo_mask.nonzero(as_tuple=True)[0]
                 
-                added_cond_kwargs = unet_added_conditions if args.sdxl else None
 
                 if len(stdpo_indices) > 0:
                     pos_indices = stdpo_indices
@@ -1015,19 +1139,10 @@ def main():
                     stdpo_latents = noisy_latents[final_indices]
                     stdpo_timesteps = timesteps[final_indices]
 
-                    if args.sdxl:#TO DO
-                        # raise NotImplementedError("SDXL DPO not implemented yet")
-                        stdpo_direction_embeds = torch.cat([prompt_batch["prompt_embeds"].chunk(2)[0][stdpo_indices], neg_prompt_batch["prompt_embeds"][stdpo_indices]], dim=0)
-                        ref_direction_batch_args = (stdpo_latents,
-                                            stdpo_timesteps, 
-                                            stdpo_direction_embeds)
-                        
-                        ref_direction_unet_added_conditions = {
-                                                "time_ids": add_time_ids[final_indices],
-                                                "text_embeds": torch.cat([prompt_batch["pooled_prompt_embeds"].chunk(2)[0][stdpo_indices],
-                                                        neg_prompt_batch["pooled_prompt_embeds"][stdpo_indices]], dim=0)
-                                                }
-                
+                    if args.sana:
+                        ref_direction_prompt_embeds = torch.cat([pos_prompt_embeds[stdpo_indices], neg_prompt_embeds[stdpo_indices]], dim=0)
+                        ref_direction_prompt_attention_mask = torch.cat([pos_prompt_attention_mask[stdpo_indices], neg_prompt_attention_mask[stdpo_indices]], dim=0)
+
                     else:
                         stdpo_pos = pos_encoder_hidden_states[stdpo_indices]
                         stdpo_neg = text_encoder(batch["neg_input_ids"][stdpo_indices])[0]
@@ -1036,91 +1151,43 @@ def main():
 
                     with torch.no_grad():
                         ref_pos_neg_target = ref_unet(
-                            *ref_direction_batch_args,
-                            added_cond_kwargs=ref_direction_unet_added_conditions if args.sdxl else None
-                        ).sample.detach()
+                            hidden_states=stdpo_latents,
+                            encoder_hidden_states=ref_direction_prompt_embeds,
+                            encoder_attention_mask=ref_direction_prompt_attention_mask,
+                            timestep=stdpo_timesteps,
+                            return_dict=False,
+                        )[0]
                         
-                        if args.pos_neg_score:
-                            ref_neg_pos_direction_batch_args = (stdpo_latents, stdpo_timesteps, torch.cat([stdpo_neg, stdpo_pos], dim=0))
-                            
-                            ref_neg_pos_target = ref_unet(
-                                *ref_neg_pos_direction_batch_args,
-                                added_cond_kwargs=added_cond_kwargs
-                            ).sample.detach()
-                            
-                            cfg_target= ref_neg_pos_target + args.guidance_scale * (ref_pos_neg_target - ref_neg_pos_target)
-                        
-                        else:
-                            if args.guidance_scale != 1:
-                                stdpo_null_embeds = null_encoder_hidden_states.repeat(len(stdpo_indices)* 2, 1, 1)
-                                ref_uncond_batch_args = (stdpo_latents, stdpo_timesteps, stdpo_null_embeds)
-                                
-                                ref_null_target = ref_unet(
-                                    *ref_uncond_batch_args,
-                                    added_cond_kwargs=added_cond_kwargs
-                                ).sample.detach()
-                                
-                                cfg_target = ref_null_target + args.guidance_scale * (ref_pos_neg_target - ref_null_target)
-                                if args.cfg_scaling:
-                                    var_ref = ref_pos_neg_target.var(dim=list(range(1, ref_pos_neg_target.ndim)), unbiased=False, keepdim=True)
-                                    var_cfg = cfg_target.var(dim=list(range(1, cfg_target.ndim)), unbiased=False, keepdim=True)
+                        if torch.isnan(ref_pos_neg_target).any():
+                            print("⚠️ NaN detected in ref_pos_neg_target")
+                            print(f"stdpo_latents NaN: {torch.isnan(stdpo_latents).any().item()}")
+                            print(f"ref_direction_prompt_embeds NaN: {torch.isnan(ref_direction_prompt_embeds).any().item()}")
+                            print(f"ref_direction_prompt_attention_mask NaN: {torch.isnan(ref_direction_prompt_attention_mask).any().item()}")
+                            print(f"stdpo_timesteps: {stdpo_timesteps}")
+                            print(f"ref_pos_neg_target stats → mean: {ref_pos_neg_target.mean().item()}, std: {ref_pos_neg_target.std().item()}")
+                            raise ValueError("ref_pos_neg_target contains NaNs!")
 
-                                    # (2) 0 으로 나누는 걸 막기 위해 작은 epsilon 추가
-                                    scale = torch.sqrt(var_ref / (var_cfg + 1e-8))
-
-                                    var_cfg_0 = cfg_target[0].var()
-                                    
-                                    # (3) 원하는 분산으로 맞춰서 스케일링
-                                    cfg_target = cfg_target * scale
-                                    
-                                    # var_ref_0 = ref_pos_neg_target[0].var()
-                                    # scaled_var_cfg_0 = cfg_target[0].var()
-
-                                    # print(f"[0] sample var_ref: {var_ref_0.item():.6f}")
-                                    # print(f"[0] sample var_cfg: {var_cfg_0.item():.6f}")
-                                    # print(f"[0] sample var_cfg_scaled: {scaled_var_cfg_0.item():.6f}")
-                                    # print(f"scaling factor: {scale[0].flatten()[0].item():.6f}")  # scale도 [0]에 대해 보고 싶으면
-
-                            else:
-                                cfg_target = ref_pos_neg_target
-
-                    target[final_indices] = cfg_target
-                
-                # if args.STDPO_CFG:
-                #     direction_encoder_hidden_states = torch.cat([pos_encoder_hidden_states,text_encoder(batch["neg_input_ids"])[0]], dim=0)
-                #     null_encoder_hidden_states_batch = null_encoder_hidden_states.repeat(bsz, 1, 1)
-                    
-                #     ref_direction_batch_args = (noisy_latents,
-                #                         timesteps, 
-                #                         prompt_batch["prompt_embeds"] if args.sdxl else direction_encoder_hidden_states)
-                #     ref_uncond_batch_args = (noisy_latents,
-                #                         timesteps, 
-                #                         prompt_batch["prompt_embeds"] if args.sdxl else null_encoder_hidden_states_batch)
-                    
-                #     with torch.no_grad(): # Get the negative target
-                #         ref_pos_neg_target = ref_unet(
-                #                         *ref_direction_batch_args,
-                #                         added_cond_kwargs = added_cond_kwargs
-                #                         ).sample.detach()
-                        
-                #         ref_null_target = ref_unet(
-                #                         *ref_uncond_batch_args,
-                #                         added_cond_kwargs = added_cond_kwargs
-                #                         ).sample.detach()
-                #         guidance_scale = args.guidance_scale
-                #         target = ref_null_target + guidance_scale * (ref_pos_neg_target - ref_null_target)
-                        
-                        
-               
-                # Make the prediction from the model we're learning
-                model_batch_args = (noisy_latents,
-                                    timesteps, 
-                                    prompt_batch["prompt_embeds"] if args.sdxl else encoder_hidden_states)
+                    target[final_indices] = ref_pos_neg_target
                 
                 model_pred = unet(
-                                *model_batch_args,
-                                  added_cond_kwargs = added_cond_kwargs
-                                 ).sample
+                            hidden_states=noisy_latents,
+                            encoder_hidden_states=torch.cat([pos_prompt_embeds, pos_prompt_embeds], dim=0),
+                            encoder_attention_mask=torch.cat([pos_prompt_attention_mask, pos_prompt_attention_mask], dim=0),
+                            timestep=timesteps,
+                            return_dict=False,
+                            )[0]
+                
+                print("step", step)
+                if torch.isnan(model_pred).any():
+                    print("🚨 NaN detected in model_pred")
+                    print(f"noisy_latents NaN: {torch.isnan(noisy_latents).any().item()}")
+                    print(f"pos_prompt_embeds NaN: {torch.isnan(pos_prompt_embeds).any().item()}")
+                    print(f"pos_prompt_attention_mask NaN: {torch.isnan(pos_prompt_attention_mask).any().item()}")
+                    print(f"timesteps NaN: {torch.isnan(timesteps).any().item()} | timesteps min/max: {timesteps.min().item()} / {timesteps.max().item()}")
+                    print(f"model_pred stats → mean: {model_pred.mean().item()}, std: {model_pred.std().item()}")
+                    raise ValueError("model_pred contains NaNs!")
+                
+                
                 #### START LOSS COMPUTATION ####
                 if args.train_method == 'sft': # SFT, casting for F.mse_loss
                     loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
@@ -1137,9 +1204,12 @@ def main():
                     
                     with torch.no_grad(): # Get the reference policy (unet) prediction
                         ref_pred = ref_unet(
-                                    *model_batch_args,
-                                      added_cond_kwargs = added_cond_kwargs
-                                     ).sample.detach()
+                            hidden_states=noisy_latents,
+                            encoder_hidden_states=torch.cat([pos_prompt_embeds, pos_prompt_embeds], dim=0),
+                            encoder_attention_mask=torch.cat([pos_prompt_attention_mask, pos_prompt_attention_mask], dim=0),
+                            timestep=timesteps,
+                            return_dict=False,
+                            )[0]
                         ref_losses = (ref_pred - target).pow(2).mean(dim=[1,2,3])
                         ref_losses_w, ref_losses_l = ref_losses.chunk(2)
                         ref_diff = ref_losses_w - ref_losses_l
@@ -1148,25 +1218,7 @@ def main():
                     scale_term = -0.5 * args.beta_dpo
                     inside_term = scale_term * (model_diff - ref_diff)
                     implicit_acc = (inside_term > 0).sum().float() / inside_term.size(0)
-                    if args.loss_weighting == "linear":
-                        T_max = noise_scheduler.num_train_timesteps
-                        timesteps_float = timesteps.float()  # shape: (2 * LBS,)
-                        
-                        weights = timesteps_float / (T_max - 1)  # linear weighting: 0~1
-                        weights = weights.to(inside_term.device)
-                        
-                        weighted_losses = -F.logsigmoid(inside_term) * weights
-                        loss = weighted_losses.mean()
-                        
-                    elif args.loss_weighting == "sigmoid":
-                        T_max = noise_scheduler.num_train_timesteps
-                        timesteps_float = timesteps.float()
-                        lambda_t = -15.0 + 20.0 * (timesteps_float / (T_max - 1))  # λt ∈ [−15, 5]
-                        b = 1.5  # tune if needed
-                        weights = 1.0 / (1.0 + torch.exp(b - lambda_t.to(inside_term.device)))
-                        loss = (-F.logsigmoid(inside_term) * weights).mean()
-                    else:
-                        loss = -F.logsigmoid(inside_term).mean()
+                    loss = -1 * F.logsigmoid(inside_term).mean()
                 #### END LOSS COMPUTATION ###
                     
                 # Gather the losses across all processes for logging 

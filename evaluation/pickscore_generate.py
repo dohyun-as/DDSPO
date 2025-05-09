@@ -5,6 +5,8 @@ import torch
 from PIL import Image
 import hpsv2
 from accelerate import Accelerator
+from datasets import load_dataset
+import json
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -71,12 +73,6 @@ def parse_args():
         help="dir to write results to",
         default="results",
     )
-    parser.add_argument(
-        "--cache_dir",
-        type=str,
-        help="dir to write cache",
-        default=None,
-    )
     parser.add_argument("--img_sz", type=int, default=512)
     args = parser.parse_args()
     return args
@@ -94,14 +90,14 @@ def main():
     # Use the Euler scheduler here instead
     if opt.SDXL:
         if opt.trailing:
-            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
             
             pipe.scheduler = EulerDiscreteScheduler.from_config(
                 pipe.scheduler.config, timestep_spacing="trailing"
                 )
         else:
             scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16")
         
         
         if opt.ckpt is not None:
@@ -111,7 +107,7 @@ def main():
     elif opt.SANA:
         from diffusers import SanaPipeline
         pipe = SanaPipeline.from_pretrained(
-            model_id,  
+            model_id,
             variant="fp16",
             torch_dtype=torch.float16, 
             cache_dir=opt.cache_dir
@@ -122,77 +118,83 @@ def main():
             
         pipe.vae.to(torch.bfloat16)
         pipe.text_encoder.to(torch.bfloat16)
+        
     else:
-        pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
+        pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
         
         if opt.ckpt is not None:
             pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
             pipe.unet = pipe.unet.to(torch.float16).to(accelerator.device)
         
     pipe = pipe.to(accelerator.device)
-    pipe.set_progress_bar_config(disable=True)
-    if opt.SDXL:
+    if opt.SDXL or opt.SANA:
         pipe.enable_vae_slicing()
+    pipe.set_progress_bar_config(disable=True)
+
     pipe.safety_checker = None
 
     save_dir = opt.outdir
 
     # Create base save directory
     os.makedirs(save_dir, exist_ok=True)
+    
+    image_dir = os.path.join(opt.outdir, "images")
+    os.makedirs(image_dir, exist_ok=True)
 
     # Get benchmark prompts (<style> = all, anime, concept-art, paintings, photo)
-    all_prompts = hpsv2.benchmark_prompts('all')
+    dataset = load_dataset("nateraw/parti-prompts")["train"]
+    prompts = dataset["Prompt"]
+    total = len(prompts)
 
-    # Iterate over the benchmark prompts to generate images
+    chunk_size = (total + world_size - 1) // world_size
+    start_idx = rank * chunk_size
+    end_idx = min(start_idx + chunk_size, total)
+    prompts_per_rank = prompts[start_idx:end_idx]
+
     generator = torch.Generator(device=accelerator.device).manual_seed(42)
-    
-    # for style, prompts in all_prompts.items():
-    #     style_dir = os.path.join(save_dir, style)
-    #     os.makedirs(style_dir, exist_ok=True)  # Ensure the style directory exists
 
-    #     for idx, prompt in enumerate(prompts):
-    #         images = pipe(prompt, num_inference_steps=25, guidance_scale=7.5, generator=generator).images
-    #         for i in range(len(images)):
-    #             images[i].save(os.path.join(style_dir, f"{idx:05d}.jpg"))
-    #             print(f"Saved: {os.path.join(style_dir, f'{idx:05d}.jpg')}")
+    metadata = {}
 
-    for style, prompts in all_prompts.items():
-        style_dir = os.path.join(save_dir, style)
-        if accelerator.is_main_process:
-            os.makedirs(style_dir, exist_ok=True)
-        accelerator.wait_for_everyone()
 
-        total = len(prompts)
-        chunk_size = (total + world_size - 1) // world_size
-        start_idx = rank * chunk_size
-        end_idx = min(start_idx + chunk_size, total)
+    # 여기부터 Batch로 처리
+    for batch_start in range(0, len(prompts_per_rank), opt.batch_size):
+        # batch 단위로 프롬프트를 슬라이싱
+        prompt_batch = prompts_per_rank[batch_start:batch_start + opt.batch_size]
+        # 파이프라인에 리스트 형태로 전달
+        outputs = pipe(
+            prompt_batch,
+            height=opt.img_sz,
+            width=opt.img_sz,
+            num_inference_steps=opt.num_inference_steps,
+            guidance_scale=opt.guidance_scale,
+            generator=generator
+        )
+        images = outputs.images
 
-        prompts_per_rank = prompts[start_idx:end_idx]
+        # batch 내 각 이미지 저장
+        for i, img in enumerate(images):
+            global_index = start_idx+batch_start + i
+            save_path = os.path.join(opt.outdir, "images", f"{global_index:05d}.jpg")
+            img.save(save_path)
+            print(f"Saved: {save_path}")
+            metadata[f"{global_index:05d}.jpg"] = prompt_batch[i]
+            
+    # Save metadata.json (only main process)
+    local_metadata = metadata  # 이건 딕셔너리임
 
-        # 여기부터 Batch로 처리
-        for batch_start in range(0, len(prompts_per_rank), opt.batch_size):
-            # batch 단위로 프롬프트를 슬라이싱
-            prompt_batch = prompts_per_rank[batch_start:batch_start + opt.batch_size]
-            # 파이프라인에 리스트 형태로 전달
-            outputs = pipe(
-                prompt_batch,
-                height=opt.img_sz,
-                width=opt.img_sz,
-                num_inference_steps=opt.num_inference_steps,
-                guidance_scale=opt.guidance_scale,
-                generator=generator
-            )
-            images = outputs.images
+    all_metadata = accelerator.gather_for_metrics([local_metadata])
 
-            # batch 내 각 이미지 저장
-            for i, img in enumerate(images):
-                global_index = start_idx+batch_start + i
-                save_path = os.path.join(style_dir, f"{global_index:05d}.jpg")
-                img.save(save_path)
-                print(f"Saved: {save_path}")
-                
+    if accelerator.is_main_process:
+        final_metadata = {}
+        for md in all_metadata:
+            final_metadata.update(md)
+
+        metadata_path = os.path.join(opt.outdir, "metadata.json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(final_metadata, f, indent=2, ensure_ascii=False)
+        print(f"[Main Rank] Saved metadata to {metadata_path}")
         
-        accelerator.wait_for_everyone()
+        
 if __name__ == "__main__":
     main()
 

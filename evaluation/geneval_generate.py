@@ -103,21 +103,9 @@ def parse_args():
         help="Negative prompt for guidance",
     )
     parser.add_argument(
-        "--H",
-        type=int,
-        default=None,
-        help="Image height, in pixels",
-    )
-    parser.add_argument(
-        "--W",
-        type=int,
-        default=None,
-        help="Image width, in pixels",
-    )
-    parser.add_argument(
         "--scale",
         type=float,
-        default=9.0,
+        default=7.5,
         help="Guidance scale",
     )
     parser.add_argument(
@@ -166,6 +154,12 @@ def parse_args():
         action="store_true",
         help="SDXL",
     )
+    parser.add_argument(
+        "--SANA",
+        action="store_true",
+        help="SANA",
+    )
+    parser.add_argument("--img_sz", type=int, default=512)
     opt = parser.parse_args()
     return opt
 
@@ -221,13 +215,11 @@ def generate_with_accelerator(accelerator, pipe, opt):
                 current_bs = min(batch_size, opt.n_samples - sample_count)
                 images = pipe(
                     prompt,
-                    height=opt.H,
-                    width=opt.W,
+                    height=opt.img_sz,
+                    width=opt.img_sz,
                     num_inference_steps=opt.steps,
                     guidance_scale=opt.scale,
-                    num_images_per_prompt=current_bs,
-                    negative_prompt=opt.negative_prompt or None,
-                    progress_bar=False
+                    num_images_per_prompt=current_bs
                 ).images
 
                 for img in images:
@@ -259,13 +251,33 @@ def main(opt):
             opt.model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16", cache_dir=opt.cache_dir
         )
         pipe.enable_xformers_memory_efficient_attention()
+        
+        if opt.unet_path is not None:
+            print(f"[Info] Loading UNet from: {opt.unet_path}")
+            custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, torch_dtype=torch.float16)
+            pipe.unet = custom_unet.to(accelerator.device)
+        
+    elif opt.SANA:
+        from diffusers import SanaPipeline
+        pipe = SanaPipeline.from_pretrained(
+            opt.model,  
+            variant="fp16",
+            torch_dtype=torch.float16, 
+            cache_dir=opt.cache_dir
+        )
+        
+        if opt.unet_path is not None:
+            pipe.load_lora_weights(opt.unet_path)
+            
+        pipe.vae.to(torch.bfloat16)
+        pipe.text_encoder.to(torch.bfloat16)
     else:
         pipe = StableDiffusionPipeline.from_pretrained(opt.model, torch_dtype=torch.float16, cache_dir=opt.cache_dir)
 
-    if opt.unet_path is not None:
-        print(f"[Info] Loading UNet from: {opt.unet_path}")
-        custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, torch_dtype=torch.float16)
-        pipe.unet = custom_unet.to(accelerator.device)
+        if opt.unet_path is not None:
+            print(f"[Info] Loading UNet from: {opt.unet_path}")
+            custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, torch_dtype=torch.float16)
+            pipe.unet = custom_unet.to(accelerator.device)
         
     pipe = pipe.to(accelerator.device)
     pipe.set_progress_bar_config(disable=True)
@@ -273,7 +285,8 @@ def main(opt):
     pipe.safety_checker = None
     if hasattr(pipe, "enable_attention_slicing"):
         pipe.enable_attention_slicing()
-        
+    if opt.SDXL:
+        pipe.enable_vae_slicing()
     generate_with_accelerator(accelerator, pipe, opt)
         
 if __name__ == "__main__":

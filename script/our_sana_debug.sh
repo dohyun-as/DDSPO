@@ -3,27 +3,30 @@
 #If you want to use restriced number of GPUs, you can set the CUDA_VISIBLE_DEVICES and NUM_GPUS environment variables
 # to the desired values before running this script.
 # Example: CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2
-CUDA_VISIBLE_DEVICES=4,7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
-NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+CUDA_VISIBLE_DEVICES=0 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+NUM_GPUS=1 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
-MODEL_NAME="CompVis/stable-diffusion-v1-4"
-DATA_DIR="./data/latents/diffusiondb_removal_200k"
+MODEL_NAME="Efficient-Large-Model/Sana_600M_1024px_diffusers"
+DATA_DIR="./data/latents/SANA_diffusiondb_removal_200k"
 EXTRA_TEXT_PATH="./data/captions/diffusiondb_removal/diffusiondb_removal.jsonl"
-OUTPUT_DIR="results/hypertuning/dpo_variant4_beta_time_linear"
+OUTPUT_DIR="results/SANA/ours_beta16k"
 
 COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
-  --train_batch_size=8 \
+  --train_batch_size=1 \
   --dataloader_num_workers=8 \
-  --gradient_accumulation_steps=128 \
+  --gradient_accumulation_steps=1 \
   --max_train_steps=500 \
   --lr_scheduler="constant_with_warmup" --lr_warmup_steps=100 \
-  --learning_rate=1e-9 --scale_lr \
-  --checkpointing_steps 50 \
+  --learning_rate=2.5e-9 --scale_lr \
+  --checkpointing_steps 500 \
   --beta_dpo 16000 \
   --output_dir=$OUTPUT_DIR \
   --cache_dir "./cache" \
-  --timestep_sampling "linear"
+  --only_cfg \
+  --guidance_scale 1 \
+  --sana \
+  --mixed_precision="no" \
 "
 
 mkdir -p "${OUTPUT_DIR}"
@@ -32,7 +35,7 @@ echo "$COMMON_ARGS" > "$OUTPUT_DIR/args.txt"
 #batch_size=16/2x64x4=2048
 PORT=$(python -c "import socket; s=socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
 if [ ${NUM_GPUS} -gt 1 ]; then
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port $PORT --multi_gpu --num_processes ${NUM_GPUS} training/dpo_cfg_randcond.py $COMMON_ARGS
+  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port $PORT --multi_gpu --num_processes ${NUM_GPUS} training/dpo_cfg_randcond_sana_debug.py $COMMON_ARGS
 else
-  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch training/dpo_cfg_randcond.py $COMMON_ARGS
+  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch training/dpo_cfg_randcond_sana_debug.py $COMMON_ARGS
 fi

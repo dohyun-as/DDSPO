@@ -24,6 +24,11 @@ def parse_args():
         help="SDXL",
     )
     parser.add_argument(
+        "--SANA",
+        action="store_true",
+        help="SANA",
+    )
+    parser.add_argument(
         "--ckpt",
         type=str,
         default=None,
@@ -72,6 +77,19 @@ def parse_args():
         # default="checkpoint/color/lora_weight_e357_s124500.pt", # TODO
         help="to load the finetuned checkpoint or not",
     )
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=7.5,
+        help="Guidance scale",
+    )
+    parser.add_argument(
+        "--num_inference_steps",
+        type=int,
+        default=25,
+        help="num_inference_steps",
+    )
+    parser.add_argument("--img_sz", type=int, default=512)
     args = parser.parse_args()
     return args
 
@@ -105,6 +123,21 @@ def main():
         if opt.ckpt is not None:
             pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
             pipe.unet = pipe.unet.to(torch.float16).to("cuda")
+            
+    elif opt.SANA:
+        from diffusers import SanaPipeline
+        pipe = SanaPipeline.from_pretrained(
+            model_id,  
+            variant="fp16",
+            torch_dtype=torch.float16, 
+            cache_dir=opt.cache_dir
+        )
+        
+        if opt.ckpt is not None:
+            pipe.load_lora_weights(opt.ckpt)
+            
+        pipe.vae.to(torch.bfloat16)
+        pipe.text_encoder.to(torch.bfloat16)
 
     else:
         pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, cache_dir=opt.cache_dir)
@@ -115,7 +148,8 @@ def main():
         
     pipe.to(accelerator.device)
     
-    # pipe.enable_vae_slicing()
+    if opt.SDXL:
+        pipe.enable_vae_slicing()
     pipe.safety_checker = None
     pipe.set_progress_bar_config(disable=True)
 
@@ -167,9 +201,10 @@ def main():
 
             for n in range(opt.n_iter):
                 prompt_batch = [prompt]*opt.batch_size
-                image = pipe(prompt_batch, num_inference_steps=25, guidance_scale=7.5, generator=generator).images
+                image = pipe(prompt_batch, num_inference_steps=opt.num_inference_steps, guidance_scale=opt.scale, generator=generator,
+                        height=opt.img_sz,
+                        width=opt.img_sz).images
                 generator = torch.Generator(device="cuda").manual_seed(42 + n + 1)
-                accelerator.wait_for_everyone()
                 for i in range(len(image)):
                     image[i].save(os.path.join(sample_path, f"{prompt}_{base_count:06}.png"))
                     images.append(image[i])
@@ -177,6 +212,7 @@ def main():
             grid = image_grid(images, rows=opt.n_iter, cols=opt.batch_size)
             grid.save(os.path.join(outpath, f'{prompt}-grid-{grid_count:05}.png'))
             grid_count += 1
+        accelerator.wait_for_everyone()
 
 if __name__ == "__main__":
     main()

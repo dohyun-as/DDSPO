@@ -59,7 +59,7 @@ def sample_images_30k(args, accelerator, pipeline):
         generator = torch.Generator(device=accelerator.device).manual_seed(42)
         # Suppress output of pipeline.generate
         imgs = pipeline(val_prompts,
-                        guidance_scale=args.guidance_scale,
+                        guidance_scale=args.scale,
                         num_inference_steps=args.num_inference_steps,
                         progress_bar=False, 
                         generator=generator,
@@ -164,6 +164,11 @@ def parse_args():
         help="SDXL",
     )
     parser.add_argument(
+        "--SANA",
+        action="store_true",
+        help="SANA",
+    )
+    parser.add_argument(
         "--ckpt",
         type=str,
         default=None,
@@ -220,7 +225,12 @@ def parse_args():
     )
     parser.add_argument("--img_sz", type=int, default=512)
     parser.add_argument("--img_resz", type=int, default=256)
-    parser.add_argument("--guidance_scale", type=float, default=7.5)
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=7.5,
+        help="Guidance scale",
+    )
     parser.add_argument("--num_inference_steps", type=int, default=25)
     args = parser.parse_args()
     return args
@@ -255,6 +265,21 @@ def main():
         if opt.ckpt is not None:
             pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
             pipe.unet = pipe.unet.to(torch.float16).to("cuda")
+            
+    elif opt.SANA:
+        from diffusers import SanaPipeline
+        pipe = SanaPipeline.from_pretrained(
+            model_id,  
+            variant="fp16",
+            torch_dtype=torch.float16, 
+            cache_dir=opt.cache_dir
+        )
+        
+        if opt.ckpt is not None:
+            pipe.load_lora_weights(opt.ckpt)
+            
+        pipe.vae.to(torch.bfloat16)
+        pipe.text_encoder.to(torch.bfloat16)
 
     else:
         pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, cache_dir=opt.cache_dir)
@@ -265,7 +290,9 @@ def main():
         
     pipe.to(accelerator.device)
     
-    # pipe.enable_vae_slicing()
+    if opt.SDXL or opt.SANA:
+        pipe.enable_vae_slicing()
+        
     pipe.safety_checker = None
     pipe.set_progress_bar_config(disable=True)
 
