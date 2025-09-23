@@ -27,6 +27,11 @@ def parse_args():
         help="SANA",
     )
     parser.add_argument(
+        "--itercomp",
+        action="store_true",
+        help="itercomp",
+    )
+    parser.add_argument(
         "--trailing",
         action="store_true",
         help="scheduler trailing",
@@ -89,15 +94,20 @@ def main():
 
     # Use the Euler scheduler here instead
     if opt.SDXL:
-        if opt.trailing:
-            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
-            
-            pipe.scheduler = EulerDiscreteScheduler.from_config(
-                pipe.scheduler.config, timestep_spacing="trailing"
-                )
-        else:
+        if opt.itercomp:
             scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16")
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, cache_dir=opt.cache_dir)
+        
+        else:
+            if opt.trailing:
+                pipe = StableDiffusionXLPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
+                
+                pipe.scheduler = EulerDiscreteScheduler.from_config(
+                    pipe.scheduler.config, timestep_spacing="trailing"
+                    )
+            else:
+                scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+                pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16)
         
         
         if opt.ckpt is not None:
@@ -120,7 +130,7 @@ def main():
         pipe.text_encoder.to(torch.bfloat16)
         
     else:
-        pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
+        pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
         
         if opt.ckpt is not None:
             pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')
@@ -176,7 +186,7 @@ def main():
             global_index = start_idx+batch_start + i
             save_path = os.path.join(opt.outdir, "images", f"{global_index:05d}.jpg")
             img.save(save_path)
-            print(f"Saved: {save_path}")
+            # print(f"Saved: {save_path}")
             metadata[f"{global_index:05d}.jpg"] = prompt_batch[i]
             
     # Save metadata.json (only main process)

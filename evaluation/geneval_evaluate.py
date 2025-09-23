@@ -20,7 +20,7 @@ from mmdet.apis import inference_detector, init_detector
 
 import open_clip
 from clip_benchmark.metrics import zeroshot_classification as zsc
-zsc.tqdm = lambda it, *args, **kwargs: it
+# zsc.tqdm = lambda it, *args, **kwargs: it
 
 from accelerate import Accelerator
 import pickle

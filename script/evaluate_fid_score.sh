@@ -10,9 +10,13 @@ CUDA_VISIBLE_DEVICES=0
 NUM_GPUS=1
 
 RESULT_PATHS=(
-    "./results/SDXL/dpo_beta8k/checkpoint-100"
+    "./results/SDXL/ours_beta22k/checkpoint-100"
 )
 
+    # "./results/aesthetic/our_beta24k/checkpoint-500"
+    # "./results/teacher/Diffusion_DPO-v1-5"
+    # "./results/teacher/Diffusion_KTO"
+    # "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
 
 
 for RESULT_DIR in "${RESULT_PATHS[@]}"; do

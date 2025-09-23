@@ -3,32 +3,32 @@
 #If you want to use restriced number of GPUs, you can set the CUDA_VISIBLE_DEVICES and NUM_GPUS environment variables
 # to the desired values before running this script.
 # Example: CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2
-CUDA_VISIBLE_DEVICES=0,1,4,7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
-NUM_GPUS=4 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+CUDA_VISIBLE_DEVICES=5,6 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 MODEL_NAME="stabilityai/stable-diffusion-xl-base-1.0"
 DATA_DIR="./data/latents/SDXL_diffusiondb_removal_200k"
 EXTRA_TEXT_PATH="./data/captions/diffusiondb_removal/diffusiondb_removal.jsonl"
-OUTPUT_DIR="results/SDXL/ours_beta16k_loss_weighiting_linear"
+OUTPUT_DIR="results/SDXL/ours_beta22k"
 
 COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
   --train_batch_size=8 \
   --dataloader_num_workers=8 \
-  --gradient_accumulation_steps=64 \
+  --gradient_accumulation_steps=128 \
   --max_train_steps=500 \
   --lr_scheduler="constant_with_warmup" --lr_warmup_steps=100 \
-  --learning_rate=2.5e-9 --scale_lr \
+  --learning_rate=1.82e-9 --scale_lr \
   --checkpointing_steps 50 \
-  --beta_dpo 16000 \
+  --beta_dpo 22000 \
   --output_dir=$OUTPUT_DIR \
   --cache_dir "./cache" \
   --only_cfg \
   --guidance_scale 1 \
-  --sdxl \
-  --loss_weighting "linear"
+  --sdxl
 "
 
+  # --loss_weighting "sigmoid"
 mkdir -p "${OUTPUT_DIR}"
 echo "$COMMON_ARGS" > "$OUTPUT_DIR/args.txt"
 

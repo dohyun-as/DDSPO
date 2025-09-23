@@ -127,6 +127,7 @@ def parse_args():
                         help="The directory where the downloaded models and datasets will be stored.")
     parser.add_argument("--SDXL", action="store_true", help="SDXL")
     parser.add_argument("--SANA", action="store_true", help="SANA")
+    parser.add_argument("--SD3", action="store_true", help="SD3")
     parser.add_argument("--bf16", action="store_true", help="use bf16")
 
 
@@ -192,6 +193,10 @@ def main():
         scheduler = EulerDiscreteScheduler.from_pretrained(args.model_name, subfolder="scheduler", cache_dir=args.cache_dir)
         pipe = StableDiffusionXLPipeline.from_pretrained(args.model_name, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=args.cache_dir).to(device)
     
+    elif args.SD3:
+        from diffusers import StableDiffusion3Pipeline
+        pipe = StableDiffusion3Pipeline.from_pretrained(args.model_name, torch_dtype=torch.float16, cache_dir=args.cache_dir).to(device)
+
     elif args.SANA:
         from diffusers import SanaPipeline
         if args.bf16:

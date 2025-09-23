@@ -159,6 +159,11 @@ def parse_args():
         action="store_true",
         help="SANA",
     )
+    parser.add_argument(
+        "--itercomp",
+        action="store_true",
+        help="itercomp",
+    )
     parser.add_argument("--img_sz", type=int, default=512)
     opt = parser.parse_args()
     return opt
@@ -247,9 +252,12 @@ def main(opt):
 
     # Load model
     if opt.model.lower().startswith("stabilityai/stable-diffusion-xl") or opt.SDXL:
-        pipe = DiffusionPipeline.from_pretrained(
-            opt.model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16", cache_dir=opt.cache_dir
-        )
+        if opt.itercomp:
+            pipe = StableDiffusionXLPipeline.from_pretrained(opt.model, torch_dtype=torch.float16, use_safetensors=True, cache_dir=opt.cache_dir)
+        else:
+            pipe = DiffusionPipeline.from_pretrained(
+                opt.model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16", cache_dir=opt.cache_dir
+            )
         pipe.enable_xformers_memory_efficient_attention()
         
         if opt.unet_path is not None:

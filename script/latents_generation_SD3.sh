@@ -7,15 +7,15 @@
 CUDA_VISIBLE_DEVICES=4,5,6,7 # $(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=4 # $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
-COMMON_ARGS="--json_file "./data/captions/diffusiondb_aesthetic_llama/diffusiondb_aesthetic_llama.jsonl" \
---save_dir "./data/latents/SDXL_diffusiondb_aesthetic_200k/" \
+COMMON_ARGS="--json_file "./data/captions/diffusiondb_removal/diffusiondb_removal.jsonl" \
+--save_dir "./data/latents/SD3_diffusiondb_removal_200k/" \
 --num_samples 200000 \
---batch_size 8 \
+--batch_size 16 \
 --save_type "latent" \
 --cache_dir "./cache" \
---model_name "stabilityai/stable-diffusion-xl-base-1.0" \
+--model_name "stabilityai/stable-diffusion-3-medium-diffusers" \
 --cfg "5.0" \
---SDXL
+--SD3
 "
 
 if [ ${NUM_GPUS} -gt 1 ]; then

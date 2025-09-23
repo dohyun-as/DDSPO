@@ -13,3 +13,5 @@ cache
 *.parquet
 temp
 script/prev_bash
+*.nfs*
+*.jpg

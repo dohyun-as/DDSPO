@@ -8,6 +8,7 @@ import sys
 import csv
 import time
 import math
+from pathlib import Path
 # add parent path to sys.path to import lora_diffusion
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # from lora_diffusion import patch_pipe
@@ -26,6 +27,13 @@ def sample_images_30k(args, accelerator, pipeline):
     accelerator.wait_for_everyone()
 
     file_list = get_file_list_from_csv(args.MSCOCO_csv_file)
+    
+    file_list = [
+    (img_name, prompt)
+    for img_name, prompt in file_list
+    if not Path(os.path.join(args.outdir, f'im{args.img_sz}', img_name)).exists()
+    ]
+
     total_files = len(file_list)
     num_processes = accelerator.num_processes
     rank = accelerator.process_index
@@ -73,6 +81,7 @@ def sample_images_30k(args, accelerator, pipeline):
         # Update progress bar only on rank 0
         if accelerator.is_main_process:
             progress_bar.update(1)
+        accelerator.wait_for_everyone()
 
     accelerator.wait_for_everyone()
 
@@ -169,6 +178,11 @@ def parse_args():
         help="SANA",
     )
     parser.add_argument(
+        "--itercomp",
+        action="store_true",
+        help="itercomp",
+    )
+    parser.add_argument(
         "--ckpt",
         type=str,
         default=None,
@@ -259,8 +273,11 @@ def main():
     if opt.SDXL:
         from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
         scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", cache_dir=opt.cache_dir)
-        pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
-
+        
+        if opt.itercomp:
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, cache_dir=opt.cache_dir)
+        else:
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
 
         if opt.ckpt is not None:
             pipe.unet = UNet2DConditionModel.from_pretrained(opt.ckpt, subfolder='unet')

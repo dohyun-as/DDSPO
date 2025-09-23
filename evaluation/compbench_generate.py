@@ -29,6 +29,11 @@ def parse_args():
         help="SANA",
     )
     parser.add_argument(
+        "--itercomp",
+        action="store_true",
+        help="itercomp",
+    )
+    parser.add_argument(
         "--ckpt",
         type=str,
         default=None,
@@ -117,7 +122,10 @@ def main():
     if opt.SDXL:
         from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
         scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", cache_dir=opt.cache_dir)
-        pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
+        if opt.itercomp:
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, cache_dir=opt.cache_dir)
+        else:
+            pipe = StableDiffusionXLPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, variant="fp16", cache_dir=opt.cache_dir)
 
 
         if opt.ckpt is not None:

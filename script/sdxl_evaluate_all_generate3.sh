@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # Set GPU info
-CUDA_VISIBLE_DEVICES=0,1 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
-NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+NUM_GPUS=8 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 # List of result directories to evaluate
-RESULT_PATHS=(
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-100"
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-200"
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-300"
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-400"
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
-)
+# RESULT_PATHS=(
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-100"
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-200"
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-300"
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-400"
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
+# )
 
 
 # #     # "./results/stdpo_base_cfg_randcond/checkpoint-100"
@@ -77,15 +77,10 @@ RESULT_PATHS=(
 
 
 RESULT_PATHS=(
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
+    "./results/SDXL/our_beta16k_sdxl/checkpoint-100"
 )
 
 file_list=(
-    "./evaluation/T2I-CompBench/examples/dataset/color_val.txt"
-    "./evaluation/T2I-CompBench/examples/dataset/shape_val.txt"
-    "./evaluation/T2I-CompBench/examples/dataset/texture_val.txt"
-    "./evaluation/T2I-CompBench/examples/dataset/spatial_val.txt"
-    "./evaluation/T2I-CompBench/examples/dataset/non_spatial_val.txt"
     "./evaluation/T2I-CompBench/examples/dataset/complex_val.txt"
 )
 
@@ -144,38 +139,38 @@ done
 
 
 
-RESULT_PATHS=(
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-100"
-    "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
-)
+# RESULT_PATHS=(
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-100"
+#     "./results/SDXL/ours_beta16k_loss_weighiting_sigmoid/checkpoint-500"
+# )
 
-# FID generation
-echo "Running FID generation for all checkpoints"
+# # FID generation
+# echo "Running FID generation for all checkpoints"
 
-batch_size=8
+# batch_size=8
 
-for ckpt in "${RESULT_PATHS[@]}"; do
-    outdir="${ckpt}/MSCOCO_img"
+# for ckpt in "${RESULT_PATHS[@]}"; do
+#     outdir="${ckpt}/MSCOCO_img"
 
-    COMMON_ARGS="--ckpt "$ckpt" \
-    --batch_size "$batch_size" \
-    --outdir "$outdir" \
-    --model_id "stabilityai/stable-diffusion-xl-base-1.0" \
-    --cache_dir "./cache"  \
-    --SDXL \
-    --scale 5.0 \
-    --img_sz 1024
-    "
+#     COMMON_ARGS="--ckpt "$ckpt" \
+#     --batch_size "$batch_size" \
+#     --outdir "$outdir" \
+#     --model_id "stabilityai/stable-diffusion-xl-base-1.0" \
+#     --cache_dir "./cache"  \
+#     --SDXL \
+#     --scale 5.0 \
+#     --img_sz 1024
+#     "
 
-    echo "Running with checkpoint: $ckpt, and output directory: $outdir"
+#     echo "Running with checkpoint: $ckpt, and output directory: $outdir"
 
-    PORT=$(python -c "import socket; s=socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
-    if [ ${NUM_GPUS} -gt 1 ]; then
-        CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port $PORT \
-        --multi_gpu --num_processes ${NUM_GPUS} evaluation/FID_generation.py $COMMON_ARGS
-    else
-        CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch evaluation/FID_generation.py $COMMON_ARGS
-    fi
-done
+#     PORT=$(python -c "import socket; s=socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
+#     if [ ${NUM_GPUS} -gt 1 ]; then
+#         CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch --main_process_port $PORT \
+#         --multi_gpu --num_processes ${NUM_GPUS} evaluation/FID_generation.py $COMMON_ARGS
+#     else
+#         CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} accelerate launch evaluation/FID_generation.py $COMMON_ARGS
+#     fi
+# done
 
 

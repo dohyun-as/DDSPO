@@ -1,24 +1,14 @@
 #!/bin/bash
 
 # Set GPU info
-CUDA_VISIBLE_DEVICES=1 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+CUDA_VISIBLE_DEVICES=3 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=1 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 # List of result directories to evaluate
 # RESULT_PATHS=(
-#     "./results/SDXL/ours_beta22k/checkpoint-100"
-#     "./results/SDXL/ours_beta22k/checkpoint-500"
-#     "./results/final_ours/ours_24k_replace_only_img/checkpoint-500"
-#     "./results/SANA/ours_beta2k_lora512/checkpoint-50"
-#     "./results/SANA/ours_beta8k_lora128/checkpoint-150"
+#     "./results/teacher/Diffusion_DPO-v1-5"
 # )
 
-
-    # "./results/aesthetic/dpo_beta10k/checkpoint-100"
-    # "./results/aesthetic/dpo_beta10k/checkpoint-200"
-    # "./results/aesthetic/dpo_beta10k/checkpoint-300"
-    # "./results/aesthetic/dpo_beta10k/checkpoint-400"
-    # "./results/aesthetic/dpo_beta10k/checkpoint-500"
 
 
 # for RESULT_DIR in "${RESULT_PATHS[@]}"; do
@@ -52,25 +42,26 @@ NUM_GPUS=1 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # done
 
 # echo "📊 Generating CSV summary..."
-# python evaluation/geneval_score.py "${OUTFILES[@]}" --output_csv geneval_summary_2.csv
+# python evaluation/geneval_score.py "${OUTFILES[@]}" --output_csv geneval_summary_3.csv
 
 
+RESULT_PATHS=(
+    "./results/final_ours_sd14_align/align_our_beta16k/checkpoint-100"
+    "./results/final_ours_sd14_align/align_sd14_our_beta16k_llama"
+)
 
-# # for ckpt in "${RESULT_PATHS[@]}"; do
-# #     outdir="${ckpt}/Pratiprompt_img"
+for ckpt in "${RESULT_PATHS[@]}"; do
+    outdir="${ckpt}/Pratiprompt_img"
 
-# #     COMMON_ARGS2="\
-# #     --image_dir "$outdir"
-# #     "
+    COMMON_ARGS2="\
+    --image_dir "$outdir"
+    "
 
-# #     CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
-# #     /workspace/miniconda3/bin/conda run -n compbench \
-# #     python evaluation/pcikscore_evaluate.py $COMMON_ARGS2
+    CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
+    /workspace/miniconda3/bin/conda run -n compbench \
+    python evaluation/pcikscore_evaluate.py $COMMON_ARGS2
 
-# # done
-
-
-
+done
 
 # for ckpt in "${RESULT_PATHS[@]}"; do
 #     outdir="${ckpt}/HPS_img"
@@ -87,12 +78,10 @@ NUM_GPUS=1 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # done
 
 
-RESULT_PATHS=(
-    "./results/SANA/ours_beta2k_lora512/checkpoint-50"
-)
-    # "./results/SDXL/ours_beta22k/checkpoint-500"
-    # "./results/final_ours/ours_24k_replace_only_img/checkpoint-500"
 
+RESULT_PATHS=(
+    "./results/aesthetic/our_beta16k/checkpoint-100"
+)
 
 evaluate_project() {
   local project_dir=$1     # e.g. "BLIPvqa_eval"
@@ -182,7 +171,6 @@ for out_dir_base in "${RESULT_PATHS[@]}"; do
   OUTFILES+=("$out_dir_base/compbench_img")
 done
 
-python evaluation/compbench_score.py "${OUTFILES[@]}" --output compbench_score2.csv
+python evaluation/compbench_score.py "${OUTFILES[@]}" --output compbench_score3.csv
 echo "All evaluations completed successfully!"
-
 

@@ -9,7 +9,7 @@ NUM_GPUS=4 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 MODEL_NAME="CompVis/stable-diffusion-v1-4"
 DATA_DIR="./data/latents/diffusiondb_removal_200k"
 # EXTRA_TEXT_PATH="./data/captions/diffusiondb_aesthetic_llama/diffusiondb_aesthetic_llama.jsonl"
-OUTPUT_DIR="results/final_ours_sd14_align/DDSPO_beta16k_batch512"
+OUTPUT_DIR="results/final_ours_sd14_align/DPO_beta8k_batch512"
 
 COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
@@ -18,14 +18,15 @@ COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --gradient_accumulation_steps=16 \
   --max_train_steps=200 \
   --lr_scheduler="constant_with_warmup" --lr_warmup_steps=100 \
-  --learning_rate=2.5e-9 --scale_lr \
+  --learning_rate=5e-9 --scale_lr \
   --checkpointing_steps 100 \
-  --beta_dpo 16000 \
+  --beta_dpo 8000 \
   --output_dir=$OUTPUT_DIR \
   --cache_dir "./cache" \
-  --only_cfg \
-  --guidance_scale 1 
 "
+
+#   --only_cfg \
+#   --guidance_scale 1 
 
 mkdir -p "${OUTPUT_DIR}"
 echo "$COMMON_ARGS" > "$OUTPUT_DIR/args.txt"
@@ -82,8 +83,8 @@ fi
 
 # List of result directories to evaluate
 RESULT_PATHS=(
-    "./results/final_ours_sd14_align/DDSPO_beta16k_batch512/checkpoint-100"
-    "./results/final_ours_sd14_align/DDSPO_beta16k_batch512/checkpoint-200"
+    "./results/final_ours_sd14_align/DPO_beta8k_batch512/checkpoint-100"
+    "./results/final_ours_sd14_align/DPO_beta8k_batch512/checkpoint-200"
 )
 
 

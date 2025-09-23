@@ -11,3 +11,4 @@ huggingface-hub
 wandb
 ninja
 xformers==0.0.29.post3
+peft

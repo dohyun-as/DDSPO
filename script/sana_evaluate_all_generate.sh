@@ -1,49 +1,49 @@
 #!/bin/bash
 
 # Set GPU info
-CUDA_VISIBLE_DEVICES=4,7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
-NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+CUDA_VISIBLE_DEVICES=2,3,4,5,6,7 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+NUM_GPUS=6 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 # List of result directories to evaluate
 RESULT_PATHS=(
-    "./results/SANA/ours_beta16k/checkpoint-50"
-    "./results/SANA/ours_beta16k/checkpoint-100"
-    "./results/SANA/ours_beta16k/checkpoint-150"
+    "./results/SANA/ours_beta2k_lora512/checkpoint-200"
+    "./results/SANA/ours_beta1k_lora128/checkpoint-100"
+    "./results/SANA/ours_beta1k_lora128/checkpoint-200"
 )
 
 
     # "./results/stdpo_base_cfg_randcond/checkpoint-100"
-# for RESULT_DIR in "${RESULT_PATHS[@]}"; do
-#     OUTDIR="${RESULT_DIR}/geneval_img"
-#     OUTFILE="${RESULT_DIR}/geneval_results.jsonl"
-#     UNET_PATH="${RESULT_DIR}/unet"
-#     METADATA="./evaluation/geneval/prompts/evaluation_metadata.jsonl"
-#     DETECTOR="./evaluation/geneval/OBJECT_DETECTOR_FOLDER"
+for RESULT_DIR in "${RESULT_PATHS[@]}"; do
+    OUTDIR="${RESULT_DIR}/geneval_img"
+    OUTFILE="${RESULT_DIR}/geneval_results.jsonl"
+    UNET_PATH="${RESULT_DIR}/unet"
+    METADATA="./evaluation/geneval/prompts/evaluation_metadata.jsonl"
+    DETECTOR="./evaluation/geneval/OBJECT_DETECTOR_FOLDER"
 
-#     COMMON_ARGS="$METADATA \
-#     --model "Efficient-Large-Model/Sana_600M_1024px_diffusers" \
-#     --outdir "$OUTDIR" \
-#     --unet_path "$RESULT_DIR" \
-#     --batch_size 4 \
-#     --scale 4.5 \
-#     --steps 20 \
-#     --cache_dir "./cache"\
-#     --SANA \
-#     --img_sz 1024
-#     "
+    COMMON_ARGS="$METADATA \
+    --model "Efficient-Large-Model/Sana_600M_1024px_diffusers" \
+    --outdir "$OUTDIR" \
+    --unet_path "$RESULT_DIR" \
+    --batch_size 4 \
+    --scale 4.5 \
+    --steps 20 \
+    --cache_dir "./cache"\
+    --SANA \
+    --img_sz 1024
+    "
 
-#     echo "🔁 Running generation and evaluation for: $RESULT_DIR"
+    echo "🔁 Running generation and evaluation for: $RESULT_DIR"
 
-#     PORT=$(python -c "import socket; s=socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
-#     if [ ${NUM_GPUS} -gt 1 ]; then
-#         CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
-#         accelerate launch --multi_gpu --num_processes ${NUM_GPUS} --main_process_port $PORT evaluation/geneval_generate.py $COMMON_ARGS
-#     else
-#         CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
-#         accelerate launch evaluation/geneval_generate.py $COMMON_ARGS
-#     fi
+    PORT=$(python -c "import socket; s=socket.socket(); s.bind(('', 0)); print(s.getsockname()[1]); s.close()")
+    if [ ${NUM_GPUS} -gt 1 ]; then
+        CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
+        accelerate launch --multi_gpu --num_processes ${NUM_GPUS} --main_process_port $PORT evaluation/geneval_generate.py $COMMON_ARGS
+    else
+        CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} \
+        accelerate launch evaluation/geneval_generate.py $COMMON_ARGS
+    fi
 
-# done
+done
 
 
 for ckpt in "${RESULT_PATHS[@]}"; do
@@ -72,11 +72,6 @@ for ckpt in "${RESULT_PATHS[@]}"; do
     fi
 done
 
-
-
-RESULT_PATHS=(
-    "./results/SANA/ours_beta16k/checkpoint-150"
-)
 
 file_list=(
     "./evaluation/T2I-CompBench/examples/dataset/color_val.txt"

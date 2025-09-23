@@ -3,13 +3,13 @@
 #If you want to use restriced number of GPUs, you can set the CUDA_VISIBLE_DEVICES and NUM_GPUS environment variables
 # to the desired values before running this script.
 # Example: CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2
-CUDA_VISIBLE_DEVICES=2,3 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
+CUDA_VISIBLE_DEVICES=5,6 #$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd "," -)
 NUM_GPUS=2 #$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 MODEL_NAME="Efficient-Large-Model/Sana_600M_1024px_diffusers"
 DATA_DIR="./data/latents/SANA_diffusiondb_removal_200k"
 EXTRA_TEXT_PATH="./data/captions/diffusiondb_removal/diffusiondb_removal.jsonl"
-OUTPUT_DIR="results/SANA/ours_beta1k_lora128"
+OUTPUT_DIR="results/SANA/ours_beta2k_lora512"
 
 COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
@@ -18,15 +18,15 @@ COMMON_ARGS="--pretrained_model_name_or_path=$MODEL_NAME \
   --gradient_accumulation_steps=256 \
   --max_train_steps=500 \
   --lr_scheduler="constant" --lr_warmup_steps=0 \
-  --learning_rate=4e-8 --scale_lr \
+  --learning_rate=2.0e-8 --scale_lr \
   --checkpointing_steps 50 \
-  --beta_dpo 1000 \
+  --beta_dpo 2000 \
   --output_dir=$OUTPUT_DIR \
   --cache_dir "./cache" \
   --only_cfg \
   --mixed_precision="no" \
   --resolution=1024 \
-  --rank 128
+  --rank 512
 "
 
 mkdir -p "${OUTPUT_DIR}"

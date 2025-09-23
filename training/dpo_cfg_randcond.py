@@ -424,6 +424,9 @@ def parse_args():
     parser.add_argument(
         "--loss_weighting", type=str, default=None, help="use loss weighting: linear, sigmoid"
     )
+    parser.add_argument(
+        "--dspo", action="store_true", help="dspo loss"
+    )
     
     
     
@@ -1148,25 +1151,31 @@ def main():
                     scale_term = -0.5 * args.beta_dpo
                     inside_term = scale_term * (model_diff - ref_diff)
                     implicit_acc = (inside_term > 0).sum().float() / inside_term.size(0)
-                    if args.loss_weighting == "linear":
-                        T_max = noise_scheduler.num_train_timesteps
-                        timesteps_float = timesteps.float()  # shape: (2 * LBS,)
-                        
-                        weights = timesteps_float / (T_max - 1)  # linear weighting: 0~1
-                        weights = weights.to(inside_term.device)
-                        
-                        weighted_losses = -F.logsigmoid(inside_term) * weights
-                        loss = weighted_losses.mean()
-                        
-                    elif args.loss_weighting == "sigmoid":
-                        T_max = noise_scheduler.num_train_timesteps
-                        timesteps_float = timesteps.float()
-                        lambda_t = -15.0 + 20.0 * (timesteps_float / (T_max - 1))  # λt ∈ [−15, 5]
-                        b = 1.5  # tune if needed
-                        weights = 1.0 / (1.0 + torch.exp(b - lambda_t.to(inside_term.device)))
-                        loss = (-F.logsigmoid(inside_term) * weights).mean()
+                    if args.dspo:
+                        pred2, _ = (model_pred - ref_pred).chunk(2)
+                        model_diff_w, model_diff_l = (model_pred - noise).chunk(2)
+                        loss = (model_diff_w - args.beta_dpo * (1 - F.sigmoid(inside_term)[:, None, None, None]) * pred2).pow(2).mean(dim=[1,2,3]).mean()
+                    
                     else:
-                        loss = -F.logsigmoid(inside_term).mean()
+                        if args.loss_weighting == "linear":
+                            T_max = noise_scheduler.num_train_timesteps
+                            timesteps_float = timesteps.chunk(2)[0].float()  # shape: (2 * LBS,)
+                            
+                            weights = timesteps_float / (T_max - 1)  # linear weighting: 0~1
+                            weights = weights.to(inside_term.device)
+                            
+                            weighted_losses = -F.logsigmoid(inside_term) * weights
+                            loss = weighted_losses.mean()
+                            
+                        elif args.loss_weighting == "sigmoid":
+                            T_max = noise_scheduler.num_train_timesteps
+                            timesteps_float = timesteps.chunk(2)[0].float()
+                            lambda_t = -15.0 + 20.0 * (timesteps_float / (T_max - 1))  # λt ∈ [−15, 5]
+                            b = 1.5  # tune if needed
+                            weights = 1.0 / (1.0 + torch.exp(b - lambda_t.to(inside_term.device)))
+                            loss = (-F.logsigmoid(inside_term) * weights).mean()
+                        else:
+                            loss = -F.logsigmoid(inside_term).mean()
                 #### END LOSS COMPUTATION ###
                     
                 # Gather the losses across all processes for logging 
