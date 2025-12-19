@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="description"
-        content="We propose random conditioning to overcome student models failing to generate images for conditions not covered by the paired dataset during diffusion model distillation, enabling compact compression with minimal performance loss.">
-  <meta name="keywords" content="Diffusion models, Knowledge distillation, Model compression, Generative modeling, Resource efficiency">
+        content="description">
+  <meta name="keywords" content="Diffusion models">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Random Conditioning with Distillation for Data-Efficient Diffusion Model Compression</title>
+  <title>Direct Diffusion Score Preference Optimization via Stepwise Contrastive Policy-Pair Supervision</title>
 
   <!-- Global site tag (gtag.js) - Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
@@ -74,17 +74,15 @@
     <div class="container is-max-desktop">
       <div class="columns is-centered">
         <div class="column has-text-centered">
-          <h1 class="title is-1 publication-title">Random Conditioning with Distillation for Data-Efficient Diffusion Model Compression</h1>
-          <div class="is-size-3 publication-authors">
+          <h1 class="title is-1 publication-title">Direct Diffusion Score Preference Optimization via Stepwise Contrastive Policy-Pair Supervision</h1>
+          <!-- <div class="is-size-3 publication-authors">
             <img src="./static/images/cvpr2025.svg" alt="CVPR Logo" style="height: 62px; vertical-align: middle; margin-right: 10px;">
             <b>CVPR 2025</b>
-          </div>
+          </div> -->
           <div class="is-size-5 publication-authors">
             <span class="author-block">
-              <a href="https://dohyun-as.github.io/">Dohyun Kim</a><sup>1</sup>*</span>
-            <span class="author-block">Sehwan Park<sup>1</sup>*</span>
-            <span class="author-block">
-              <a href="https://chaksseu.github.io/">Geonhee Han</a><sup>1</sup>,</span>
+              <a href="https://dohyun-as.github.io/">Dohyun Kim</a><sup>1</sup>,</span>
+            <span class="author-block">Seungwoo Lyu<sup>1</sup>,</span>
             <span class="author-block">
               <a href="https://seung-kim.github.io/seungkim/">Seung Wook Kim</a><sup>2</sup>,</span>
             <span class="author-block">
@@ -93,7 +91,6 @@
           <div class="is-size-5 publication-authors">
             <span class="author-block"><sup>1</sup>Korea University,</span>
             <span class="author-block"><sup>2</sup>NVIDIA</span>
-            <span class="eql-cntrb"><small><br>* Equal contribution</small></span>
           </div>
           <div style="display: flex; justify-content: center; align-items: center;">
             <a href="https://www.korea.edu/sites/en/index.do" target="_blank">
@@ -161,22 +158,22 @@
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            Diffusion models generate high-quality images through progressive denoising 
-            but are computationally intensive due to large model sizes and repeated sampling.
-            Knowledge distillation—transferring knowledge from a complex teacher to a simpler 
-            student model—has been widely studied in recognition tasks, particularly for transferring 
-            concepts unseen during student training.
-            However, its application to diffusion models remains underexplored, 
-            especially in enabling student models to generate concepts not covered by the training images.
-            In this work, we propose Random Conditioning, a novel approach 
-            that pairs noised images with randomly selected text conditions to enable efficient, 
-            image-free knowledge distillation. 
-            By leveraging this technique, we show that the student can generate concepts unseen in the training images.
-            When applied to conditional diffusion model distillation, our method allows the student 
-            to explore the condition space without generating condition-specific images,
-            resulting in notable improvements in both generation quality and efficiency.
-            This promotes resource-efficient deployment of generative diffusion models, 
-            broadening their accessibility for both research and real-world applications.
+            Diffusion models have achieved impressive results in generative tasks such as text-to-image synthesis, 
+            yet they often struggle to fully align outputs with nuanced user intent and maintain 
+            consistent aesthetic quality. Existing preference-based training methods like 
+            Diffusion Direct Preference Optimization help address these issues but rely on costly 
+            and potentially noisy human-labeled datasets. 
+            In this work, we introduce Direct Diffusion Score Preference Optimization (DDSPO), 
+            which—when winning/losing policies are accessible—directly derives per-timestep supervision 
+            from these policies. Unlike prior methods that operate solely on final samples, DDSPO provides dense, 
+            transition-level signals across the denoising trajectory. 
+            In practice, we avoid reliance on labeled data by automatically generating preference signals 
+            using a pretrained reference model: we contrast its outputs when conditioned on original prompts 
+            versus semantically degraded variants. This practical strategy enables effective score-space 
+            preference supervision without explicit reward modeling or manual annotations. 
+            Empirical results demonstrate that DDSPO improves text-image alignment and visual quality, 
+            outperforming or matching existing preference-based methods while requiring significantly 
+            less supervision.
           </p>
         </div>
       </div>
@@ -185,89 +182,7 @@
   </div>
 </section>
 
-<section class="section">
-  <div class="container is-max-desktop">
-    <!-- Method -->
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">Method</h2>
-        <!-- <img src="./static/images/randcond.png" class="center" width="600"/> -->
-        <img src="./static/images/randcond.png" style="display: block; margin: 0 auto;" width="800"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>The overall process of the Random Conditioning.</b> 
-            Given a large set of text prompts, we generate images using the teacher model only for a small subset, significantly reducing the image generation cost. 
-            These images are then used to create noised inputs for knowledge distillation.
-            During training, we pair these noised images with either their original text prompts or randomly selected ones from the full set.
-            This allows the student model to receive supervision across a much broader condition space than covered by the available image-text pairs.
-            In doing so, <b>Random Conditioning enables image-free, data-efficient distillation</b> of conditional diffusion models, allowing the student to generalize beyond the limited set of generated images.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">Observations and Motivation</h2>
-        <img src="./static/images/observation_motivation.png" class="center"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>Conditioning behavior across timesteps.</b>
-            The figure above shows how conditioning affects the denoising process across timesteps: Generated results conditioned on the rightmost column using the input image from the leftmost column at each timestep.
-            We observe that when $t$ is small, the generated image reflects the original input, while at large $t$, it follows the conditioning text.
-            This supports our random conditioning strategy, where the condition does not need to align with the noised input $\bx_t$.
-          </p>
-        </div>
-      </div>
-    </div>
-    
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">Quantitative Results</h2>
-        <img src="./static/images/quantitative_results_unseen.png" class="center"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>Knowledge transfer of unseen concepts.</b>
-            Models are trained without animal images. “Rand Cond” denotes random conditioning, and “Additional Texts” indicates extra text-only data.
-            The gray row shows teacher performance. Random conditioning enables the student to handle unseen concepts.
-          </p>
-        </div>
-        <img src="./static/images/quantitative_results.png" class="center"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>Impact of random conditioning.</b>
-            “Rand Cond” indicates whether random conditioning is applied, and “Real image” shows whether real images were used during training.
-            The gray row shows teacher performance. Random conditioning leads to better performance of the student model.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">Qualitative Results</h2>
-        <img src="./static/images/qualitative_results_unseen.jpg" class="center"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>Qualitative results on unseen concepts.</b>
-            Images generated by models distilled <b>without any animal images</b>, using animal-related captions from DiffusionDB.
-          </p>
-        </div>
-        <img src="./static/images/qualitative_results.jpg" class="center"/>
-        <div class="content has-text-justified">
-          <p>
-            <b>Qualitative comparison with baseline models.</b>
-            Images generated by our model and baseline models, using captions from DiffusionDB as prompts.
-          </p>
-        </div>
-      </div>
-    </div>
- 
-    
-  </div>
-</section>
-
-<section class="section" id="BibTeX">
+<!-- <section class="section" id="BibTeX">
   <div class="container is-max-desktop content">
     <h2 class="title">BibTeX</h2>
     <pre><code>@InProceedings{Kim_2025_CVPR,
@@ -279,7 +194,7 @@
     pages     = {18607-18618}
   }</code></pre>
   </div>
-</section>
+</section> -->
 
 
 <footer class="footer">
