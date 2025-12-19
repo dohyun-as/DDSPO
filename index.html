@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="description"
+        content="We propose random conditioning to overcome student models failing to generate images for conditions not covered by the paired dataset during diffusion model distillation, enabling compact compression with minimal performance loss.">
+  <meta name="keywords" content="Diffusion models, Knowledge distillation, Model compression, Generative modeling, Resource efficiency">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Random Conditioning with Distillation for Data-Efficient Diffusion Model Compression</title>
+
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+
+    gtag('js', new Date());
+
+    gtag('config', 'G-PYVRSFMDRL');
+  </script>
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
+        rel="stylesheet">
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+  <link rel="icon" href="./static/images/favicon.png"> 
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="./static/js/fontawesome.all.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+  <script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"></script>
+  <!-- KaTex -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/katex.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/katex.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.4/contrib/auto-render.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "$", right: "$", display: false}
+        ]
+      });
+    });
+  </script>
+  <!-- KaTex -->
+</head>
+<body>
+
+<nav class="navbar" role="navigation" aria-label="main navigation">
+  <div class="navbar-brand">
+    <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+    </a>
+  </div>
+</nav>
+
+
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title">Random Conditioning with Distillation for Data-Efficient Diffusion Model Compression</h1>
+          <div class="is-size-3 publication-authors">
+            <img src="./static/images/cvpr2025.svg" alt="CVPR Logo" style="height: 62px; vertical-align: middle; margin-right: 10px;">
+            <b>CVPR 2025</b>
+          </div>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block">
+              <a href="https://dohyun-as.github.io/">Dohyun Kim</a><sup>1</sup>*</span>
+            <span class="author-block">Sehwan Park<sup>1</sup>*</span>
+            <span class="author-block">
+              <a href="https://chaksseu.github.io/">Geonhee Han</a><sup>1</sup>,</span>
+            <span class="author-block">
+              <a href="https://seung-kim.github.io/seungkim/">Seung Wook Kim</a><sup>2</sup>,</span>
+            <span class="author-block">
+              <a href="https://phseo.github.io/">Paul Hongsuck Seo</a><sup>1</sup>;</span>
+          </div>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block"><sup>1</sup>Korea University,</span>
+            <span class="author-block"><sup>2</sup>NVIDIA</span>
+            <span class="eql-cntrb"><small><br>* Equal contribution</small></span>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <a href="https://www.korea.edu/sites/en/index.do" target="_blank">
+              <img src="./static/images/ku-logo.png" alt="korea" style="height: 50px; margin-right: 60px;">
+            </a>
+            <a href="https://miil.korea.ac.kr/" target="_blank">
+              <img src="./static/images/miil.png" alt="miil" style="height: 54px; margin-right: 50px;">
+            </a>
+            <img src="./static/images/NVLogo_2D_H.jpg" alt="NVIDIA" style="height:61px;">
+          </div>
+
+          <div class="column has-text-centered">
+            <div class="publication-links">
+              <!-- PDF Link. -->
+              <span class="link-block">
+                <a href="https://arxiv.org/abs/2504.02011"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fas fa-file-pdf"></i>
+                  </span>
+                  <span>Paper</span>
+                </a>
+              </span>
+              <!-- <span class="link-block">
+                <a href="https://arxiv.org/abs/2502.06139"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="ai ai-arxiv"></i>
+                  </span>
+                  <span>arXiv</span>
+                </a>
+              </span> -->
+              <span class="link-block">
+                <a href="https://github.com/dohyun-as/Random-Conditioning"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fab fa-github"></i>
+                  </span>
+                  <span>Code</span>
+                  </a>
+              </span>
+              <!-- <span class="link-block">
+                <a href=""
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <img src="https://huggingface.co/front/assets/huggingface_logo-noborder.svg" 
+                         alt="Hugging Face" style="width: 20px; height: 20px;">
+                  </span>
+                  <span>Dataset</span>
+                </a>
+              </span> -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- Abstract. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Abstract</h2>
+        <div class="content has-text-justified">
+          <p>
+            Diffusion models generate high-quality images through progressive denoising 
+            but are computationally intensive due to large model sizes and repeated sampling.
+            Knowledge distillation—transferring knowledge from a complex teacher to a simpler 
+            student model—has been widely studied in recognition tasks, particularly for transferring 
+            concepts unseen during student training.
+            However, its application to diffusion models remains underexplored, 
+            especially in enabling student models to generate concepts not covered by the training images.
+            In this work, we propose Random Conditioning, a novel approach 
+            that pairs noised images with randomly selected text conditions to enable efficient, 
+            image-free knowledge distillation. 
+            By leveraging this technique, we show that the student can generate concepts unseen in the training images.
+            When applied to conditional diffusion model distillation, our method allows the student 
+            to explore the condition space without generating condition-specific images,
+            resulting in notable improvements in both generation quality and efficiency.
+            This promotes resource-efficient deployment of generative diffusion models, 
+            broadening their accessibility for both research and real-world applications.
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Abstract. -->
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- Method -->
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3 has-text-centered">Method</h2>
+        <!-- <img src="./static/images/randcond.png" class="center" width="600"/> -->
+        <img src="./static/images/randcond.png" style="display: block; margin: 0 auto;" width="800"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>The overall process of the Random Conditioning.</b> 
+            Given a large set of text prompts, we generate images using the teacher model only for a small subset, significantly reducing the image generation cost. 
+            These images are then used to create noised inputs for knowledge distillation.
+            During training, we pair these noised images with either their original text prompts or randomly selected ones from the full set.
+            This allows the student model to receive supervision across a much broader condition space than covered by the available image-text pairs.
+            In doing so, <b>Random Conditioning enables image-free, data-efficient distillation</b> of conditional diffusion models, allowing the student to generalize beyond the limited set of generated images.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3 has-text-centered">Observations and Motivation</h2>
+        <img src="./static/images/observation_motivation.png" class="center"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>Conditioning behavior across timesteps.</b>
+            The figure above shows how conditioning affects the denoising process across timesteps: Generated results conditioned on the rightmost column using the input image from the leftmost column at each timestep.
+            We observe that when $t$ is small, the generated image reflects the original input, while at large $t$, it follows the conditioning text.
+            This supports our random conditioning strategy, where the condition does not need to align with the noised input $\bx_t$.
+          </p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3 has-text-centered">Quantitative Results</h2>
+        <img src="./static/images/quantitative_results_unseen.png" class="center"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>Knowledge transfer of unseen concepts.</b>
+            Models are trained without animal images. “Rand Cond” denotes random conditioning, and “Additional Texts” indicates extra text-only data.
+            The gray row shows teacher performance. Random conditioning enables the student to handle unseen concepts.
+          </p>
+        </div>
+        <img src="./static/images/quantitative_results.png" class="center"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>Impact of random conditioning.</b>
+            “Rand Cond” indicates whether random conditioning is applied, and “Real image” shows whether real images were used during training.
+            The gray row shows teacher performance. Random conditioning leads to better performance of the student model.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="columns is-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3 has-text-centered">Qualitative Results</h2>
+        <img src="./static/images/qualitative_results_unseen.jpg" class="center"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>Qualitative results on unseen concepts.</b>
+            Images generated by models distilled <b>without any animal images</b>, using animal-related captions from DiffusionDB.
+          </p>
+        </div>
+        <img src="./static/images/qualitative_results.jpg" class="center"/>
+        <div class="content has-text-justified">
+          <p>
+            <b>Qualitative comparison with baseline models.</b>
+            Images generated by our model and baseline models, using captions from DiffusionDB as prompts.
+          </p>
+        </div>
+      </div>
+    </div>
+ 
+    
+  </div>
+</section>
+
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+    <pre><code>@InProceedings{Kim_2025_CVPR,
+    author    = {Kim, Dohyun and Park, Sehwan and Han, Geonhee and Kim, Seung Wook and Seo, Paul Hongsuck},
+    title     = {Random Conditioning for Diffusion Model Compression with Distillation},
+    booktitle = {Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR)},
+    month     = {June},
+    year      = {2025},
+    pages     = {18607-18618}
+  }</code></pre>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            This website is licensed under a <a rel="license"
+                                                href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+            Commons Attribution-ShareAlike 4.0 International License</a>.
+          </p>
+          <p>
+            This means you are free to borrow the <a
+              href="https://github.com/nerfies/nerfies.github.io">source code</a> of this website,
+            we just ask that you link back to this page in the footer.
+            Please remember to remove the analytics code included in the header of the website which
+            you do not want on your website.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
