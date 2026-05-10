@@ -240,6 +240,16 @@ def main():
             ignore_mismatched_sizes=True,
         )
 
+    # Zero-init the newly-added cond_proj. With Kaiming-init the student
+    # immediately disagrees with the teacher (cond_proj(w_emb) injects ~O(1)
+    # random perturbation into the time embedding), and the s≤8 amplification
+    # in the CFG target then explodes gradients -> NaN within a few hundred
+    # steps. Zeroing cond_proj makes step-0 behavior identical to the teacher,
+    # standard practice when adding new conditioning to a pretrained model
+    # (ControlNet / IP-Adapter / LCM all do this).
+    if hasattr(unet.time_embedding, "cond_proj") and unet.time_embedding.cond_proj is not None:
+        torch.nn.init.zeros_(unet.time_embedding.cond_proj.weight)
+
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
     ref_unet.requires_grad_(False)
@@ -453,6 +463,16 @@ def main():
                 ).sample
 
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+
+                # Defensive NaN/Inf guard: if any rank produces non-finite
+                # loss, zero the loss on that rank so the global gradient is
+                # finite (still synchronised across DDP) and the optimizer
+                # step is effectively a no-op for the bad rank. Without this a
+                # single bad batch corrupts the model permanently.
+                loss_is_finite = torch.isfinite(loss)
+                if not loss_is_finite:
+                    logger.warning(f"[step {global_step}] non-finite loss on rank {accelerator.process_index}; zeroing")
+                    loss = loss * 0.0
 
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss.item() / args.gradient_accumulation_steps
