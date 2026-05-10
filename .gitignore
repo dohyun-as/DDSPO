@@ -15,3 +15,19 @@ temp
 script/prev_bash
 *.nfs*
 *.jpg
+hf_cache
+
+# Large weights / latents (never commit)
+sd35_latent
+*.pt
+*.safetensors
+*.ckpt
+*.bin
+
+# Misc local junk
+.gradio
+*.deb
+dohyun_key
+*_key
+*.pem
+*.pub

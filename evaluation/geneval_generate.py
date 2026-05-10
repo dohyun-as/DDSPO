@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 from tqdm import tqdm
@@ -34,6 +35,33 @@ def seed_everything(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def random_removal_neg_prompt(prompt, sample_idx, base_seed=42,
+                              ratio_low=0.4, ratio_high=0.7):
+    """Build a negative prompt by randomly dropping words from the original prompt.
+
+    Mirrors prompts_generation/DiffusionDB_random_removal.py. Deterministic given
+    (prompt, sample_idx, base_seed) so reruns reproduce the same neg prompts.
+    """
+    seed_str = f"{prompt}|{sample_idx}|{base_seed}"
+    seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+    rng = random.Random(seed)
+
+    words = prompt.split()
+    if len(words) < 2:
+        return ""
+
+    for _ in range(8):
+        ratio = rng.uniform(ratio_low, ratio_high)
+        num_to_remove = max(1, int(ratio * len(words)))
+        num_to_remove = min(num_to_remove, len(words) - 1)
+        indices_to_remove = set(rng.sample(range(len(words)), num_to_remove))
+        neg_prompt = ' '.join(w for i, w in enumerate(words) if i not in indices_to_remove)
+        if neg_prompt and neg_prompt != prompt:
+            return neg_prompt
+    # Fallback: drop the first word
+    return ' '.join(words[1:])
     
 def load_and_split_prompts(metadata_file, accelerator, batch_size):
     with open(metadata_file, "r", encoding="utf-8") as f:
@@ -144,6 +172,11 @@ def parse_args():
         help="Optional path to a custom UNet (e.g. from checkpoint).",
     )
     parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="Load unet_path as LoRA weights instead of full UNet.",
+    )
+    parser.add_argument(
         "--cache_dir",
         type=str,
         default=None,
@@ -160,11 +193,53 @@ def parse_args():
         help="SANA",
     )
     parser.add_argument(
+        "--SD3",
+        action="store_true",
+        help="SD3",
+    )
+    parser.add_argument(
+        "--SD35_large",
+        action="store_true",
+        help="SD35_large",
+    )
+    parser.add_argument(
+        "--Flux",
+        action="store_true",
+        help="Flux",
+    )
+    parser.add_argument(
         "--itercomp",
         action="store_true",
         help="itercomp",
     )
     parser.add_argument("--img_sz", type=int, default=512)
+    parser.add_argument(
+        "--neg_prompt_random_removal",
+        action="store_true",
+        help=(
+            "Use random-removal negative prompts (à la "
+            "prompts_generation/DiffusionDB_random_removal.py) for CFG instead of "
+            "the default unconditional / fixed negative prompt."
+        ),
+    )
+    parser.add_argument(
+        "--neg_prompt_seed",
+        type=int,
+        default=42,
+        help="Base seed for deterministic random-removal negative prompts.",
+    )
+    parser.add_argument(
+        "--neg_prompt_ratio_low",
+        type=float,
+        default=0.4,
+        help="Lower bound for the fraction of words to drop in random removal.",
+    )
+    parser.add_argument(
+        "--neg_prompt_ratio_high",
+        type=float,
+        default=0.7,
+        help="Upper bound for the fraction of words to drop in random removal.",
+    )
     opt = parser.parse_args()
     return opt
 
@@ -205,12 +280,39 @@ def generate_with_accelerator(accelerator, pipe, opt):
         prompt = metadata["prompt"]
         outpath = os.path.join(opt.outdir, folder_name)
         os.makedirs(outpath, exist_ok=True)
-        
+
         sample_path = os.path.join(outpath, "samples")
         os.makedirs(sample_path, exist_ok=True)
 
+        # Pre-compute deterministic per-sample negative prompts (if requested)
+        if opt.neg_prompt_random_removal:
+            sample_neg_prompts = [
+                random_removal_neg_prompt(
+                    prompt, i,
+                    base_seed=opt.neg_prompt_seed,
+                    ratio_low=opt.neg_prompt_ratio_low,
+                    ratio_high=opt.neg_prompt_ratio_high,
+                )
+                for i in range(opt.n_samples)
+            ]
+        else:
+            sample_neg_prompts = None
+
+        metadata_to_save = dict(metadata)
+        if sample_neg_prompts is not None:
+            metadata_to_save["neg_prompts"] = sample_neg_prompts
+        elif opt.negative_prompt is not None:
+            metadata_to_save["neg_prompts"] = [opt.negative_prompt] * opt.n_samples
         with open(os.path.join(outpath, "metadata.jsonl"), "w", encoding="utf-8") as f:
-            json.dump(metadata, f)
+            json.dump(metadata_to_save, f)
+
+        # Skip if all sample images already exist
+        skip_generation = all(
+            os.path.exists(os.path.join(sample_path, f"{i:05d}.png"))
+            for i in range(opt.n_samples)
+        )
+        if skip_generation:
+            continue
 
         sample_count = 0
         batch_size = opt.batch_size
@@ -218,14 +320,28 @@ def generate_with_accelerator(accelerator, pipe, opt):
         with torch.no_grad():
             for _ in range((opt.n_samples + batch_size - 1) // batch_size):
                 current_bs = min(batch_size, opt.n_samples - sample_count)
-                images = pipe(
-                    prompt,
-                    height=opt.img_sz,
-                    width=opt.img_sz,
-                    num_inference_steps=opt.steps,
-                    guidance_scale=opt.scale,
-                    num_images_per_prompt=current_bs
-                ).images
+                if sample_neg_prompts is not None:
+                    batch_negs = sample_neg_prompts[sample_count:sample_count + current_bs]
+                    images = pipe(
+                        [prompt] * current_bs,
+                        negative_prompt=batch_negs,
+                        height=opt.img_sz,
+                        width=opt.img_sz,
+                        num_inference_steps=opt.steps,
+                        guidance_scale=opt.scale,
+                        num_images_per_prompt=1,
+                    ).images
+                else:
+                    pipe_kwargs = dict(
+                        height=opt.img_sz,
+                        width=opt.img_sz,
+                        num_inference_steps=opt.steps,
+                        guidance_scale=opt.scale,
+                        num_images_per_prompt=current_bs,
+                    )
+                    if opt.negative_prompt is not None:
+                        pipe_kwargs["negative_prompt"] = opt.negative_prompt
+                    images = pipe(prompt, **pipe_kwargs).images
 
                 for img in images:
                     img.save(os.path.join(sample_path, f"{sample_count:05d}.png"))
@@ -240,9 +356,7 @@ def generate_with_accelerator(accelerator, pipe, opt):
                 grid = (255. * grid.permute(1, 2, 0).cpu().numpy()).astype("uint8")
                 Image.fromarray(grid).save(os.path.join(outpath, "grid.png"))
 
-    accelerator.wait_for_everyone()
-    if accelerator.is_local_main_process:
-        print("Done.")
+    print(f"[Rank {rank}] Done.")
 # ------------------------------------------------------------------------------
 # 3) MAIN GENERATION
 # ------------------------------------------------------------------------------
@@ -258,13 +372,50 @@ def main(opt):
             pipe = DiffusionPipeline.from_pretrained(
                 opt.model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16", cache_dir=opt.cache_dir
             )
-        pipe.enable_xformers_memory_efficient_attention()
+        # pipe.enable_xformers_memory_efficient_attention()
         
         if opt.unet_path is not None:
             print(f"[Info] Loading UNet from: {opt.unet_path}")
-            custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, torch_dtype=torch.float16)
+            custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, subfolder='unet', torch_dtype=torch.float16)
             pipe.unet = custom_unet.to(accelerator.device)
         
+    elif opt.SD3:
+        from diffusers import StableDiffusion3Pipeline
+        from diffusers.models.transformers import SD3Transformer2DModel
+        pipe = StableDiffusion3Pipeline.from_pretrained(
+            opt.model,
+            torch_dtype=torch.float16,
+            cache_dir=opt.cache_dir
+        )
+        
+        if opt.unet_path is not None:
+            print(f"[Info] Loading LoRA weights from: {opt.unet_path}")
+            pipe.load_lora_weights(opt.unet_path)
+            # print(f"[Info] Loading Transformer from: {opt.unet_path}")
+            # transformer = SD3Transformer2DModel.from_pretrained(
+            #     opt.unet_path,
+            #     torch_dtype=torch.float16
+            # )
+            # print(f"[Info] Successfully loaded Transformer. rank: {accelerator.process_index}")
+            # pipe.transformer = transformer.to(accelerator.device)
+    
+    elif opt.SD35_large:
+        from diffusers import StableDiffusion3Pipeline
+        pipe = StableDiffusion3Pipeline.from_pretrained(
+            opt.model,
+            torch_dtype=torch.bfloat16,
+            cache_dir=opt.cache_dir
+        )
+
+        if opt.unet_path is not None:
+            print(f"[Info] Loading LoRA weights from: {opt.unet_path}")
+            pipe.load_lora_weights(opt.unet_path)
+    elif opt.Flux:
+        from diffusers import FluxPipeline
+
+        pipe = FluxPipeline.from_pretrained(opt.model, torch_dtype=torch.bfloat16, cache_dir=opt.cache_dir)
+        # pipe.enable_model_cpu_offload() #save some VRAM by offloading the model to CPU. Remove this if you have enough GPU power
+        pipe.enable_vae_slicing()
     elif opt.SANA:
         from diffusers import SanaPipeline
         pipe = SanaPipeline.from_pretrained(
@@ -283,9 +434,17 @@ def main(opt):
         pipe = StableDiffusionPipeline.from_pretrained(opt.model, torch_dtype=torch.float16, cache_dir=opt.cache_dir)
 
         if opt.unet_path is not None:
-            print(f"[Info] Loading UNet from: {opt.unet_path}")
-            custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, torch_dtype=torch.float16)
-            pipe.unet = custom_unet.to(accelerator.device)
+            if opt.lora:
+                print(f"[Info] Loading LoRA weights from: {opt.unet_path}")
+                lora_path = opt.unet_path
+                if os.path.isfile(lora_path):
+                    pipe.load_lora_weights(os.path.dirname(lora_path), weight_name=os.path.basename(lora_path))
+                else:
+                    pipe.load_lora_weights(lora_path, weight_name="pytorch_lora_weights.safetensors")
+            else:
+                print(f"[Info] Loading UNet from: {opt.unet_path}")
+                custom_unet = UNet2DConditionModel.from_pretrained(opt.unet_path, subfolder='unet', torch_dtype=torch.float16)
+                pipe.unet = custom_unet.to(accelerator.device)
         
     pipe = pipe.to(accelerator.device)
     pipe.set_progress_bar_config(disable=True)
