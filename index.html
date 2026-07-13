@@ -363,6 +363,8 @@
     <div class="columns is-centered">
       <div class="column is-full">
         <h2 class="title is-3 has-text-centered">Qualitative Results</h2>
+
+        <h3 class="title is-5 has-text-centered">Text-to-Image Alignment &mdash; TF-CPP</h3>
         <figure class="image" style="max-width: 680px; margin: 0 auto;">
           <img src="./static/images/qual_sdxl_align.png" alt="Qualitative comparison SDXL vs DDSPO">
         </figure>
@@ -373,9 +375,18 @@
         <figure class="image" style="max-width: 680px; margin: 0 auto;">
           <img src="./static/images/qual_sana.png" alt="Qualitative comparison SANA vs DDSPO">
         </figure>
-        <p class="has-text-centered is-size-6 has-text-grey" style="margin-top:.5rem;">
+        <p class="has-text-centered is-size-6 has-text-grey" style="margin-top:.5rem; margin-bottom:2.5rem;">
           <b>SANA vs. DDSPO (TF-CPP).</b> In each pair, left: SANA; right: DDSPO. Highlighted words mark objects
           or attributes missing from the base outputs.
+        </p>
+
+        <h3 class="title is-5 has-text-centered">Aesthetic Quality &mdash; DD-CPP</h3>
+        <figure class="image" style="max-width: 680px; margin: 0 auto;">
+          <img src="./static/images/qual_ddcpp_aesthetic.png" alt="Qualitative aesthetic comparison D-DPO vs DDSPO (DD-CPP)">
+        </figure>
+        <p class="has-text-centered is-size-6 has-text-grey" style="margin-top:.5rem;">
+          <b>D-DPO vs. DDSPO (DD-CPP) on SDXL.</b> In each pair, left: D-DPO; right: DDSPO with DD-CPP. Both are
+          trained with Pick-a-Pic supervision.
         </p>
       </div>
     </div>
