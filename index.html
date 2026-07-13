@@ -158,27 +158,66 @@
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            Diffusion models have achieved impressive results in generative tasks such as text-to-image synthesis, 
-            yet they often struggle to fully align outputs with nuanced user intent and maintain 
-            consistent aesthetic quality. Existing preference-based training methods like 
-            Diffusion Direct Preference Optimization help address these issues but rely on costly 
-            and potentially noisy human-labeled datasets. 
-            In this work, we introduce Direct Diffusion Score Preference Optimization (DDSPO), 
-            which—when winning/losing policies are accessible—directly derives per-timestep supervision 
-            from these policies. Unlike prior methods that operate solely on final samples, DDSPO provides dense, 
-            transition-level signals across the denoising trajectory. 
-            In practice, we avoid reliance on labeled data by automatically generating preference signals 
-            using a pretrained reference model: we contrast its outputs when conditioned on original prompts 
-            versus semantically degraded variants. This practical strategy enables effective score-space 
-            preference supervision without explicit reward modeling or manual annotations. 
-            Empirical results demonstrate that DDSPO improves text-image alignment and visual quality, 
-            outperforming or matching existing preference-based methods while requiring significantly 
-            less supervision.
+            Diffusion models have achieved impressive results in generative tasks such as text-to-image synthesis,
+            yet they often struggle to fully align outputs with nuanced user intent and maintain consistent
+            aesthetic quality. Existing preference-based training methods such as Diffusion Direct Preference
+            Optimization help address these issues, but obtain their supervision targets from the forward process
+            <em>q(x<sub>t-1</sub>|x<sub>t</sub>,x<sub>0</sub>)</em> derived from terminal samples, which is not
+            directly aligned with the model's actual backward denoising transitions at each step.
+            In this work, we introduce <b>Direct Diffusion Score Preference Optimization (DDSPO)</b>, which defines
+            stepwise preference supervision directly over backward denoising transitions through a
+            <b>contrastive policy pair</b>, rather than relying on forward-process approximations from terminal
+            samples. We propose two practical instantiations of the contrastive policy pair: training separate
+            winning and losing models on preference data, and inducing a contrastive policy pair without additional
+            training by using a pretrained reference model conditioned on an original prompt and a semantically
+            degraded variant, requiring neither reward modeling nor manual annotations. Empirical results show that
+            contrastive-policy-pair supervision is more effective than forward-process-based supervision across
+            text&ndash;image alignment and aesthetic-quality tasks.
           </p>
         </div>
       </div>
     </div>
     <!--/ Abstract. -->
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Contrastive Policy Pair (CPP)</h2>
+        <div class="content has-text-justified">
+          <p>
+            DDSPO derives per-timestep supervision from a <b>contrastive policy pair</b> &mdash; a
+            <i>winning</i> policy and a <i>losing</i> policy whose denoising scores serve as the preferred
+            (&epsilon;<sub>&#8902;</sub><sup>w</sup>) and dispreferred (&epsilon;<sub>&#8902;</sub><sup>l</sup>)
+            targets at every step. This grounds supervision in the model's actual backward denoising
+            transitions, unlike forward-process approximations from terminal samples. We give two ways to
+            instantiate the pair:
+          </p>
+          <p>
+            <b>Data-Driven CPP (DD-CPP).</b> Given a preference-labeled dataset
+            {(x<sub>0</sub><sup>w</sup>, x<sub>0</sub><sup>l</sup>, c)}, we fine-tune two models from the same
+            pretrained initialization &mdash; a winning model &phi;<sup>w</sup> on the preferred samples and a
+            losing model &phi;<sup>l</sup> on the dispreferred samples &mdash; with a standard diffusion loss.
+            Their per-step scores &epsilon;<sub>&phi;<sup>w</sup></sub> and &epsilon;<sub>&phi;<sup>l</sup></sub>
+            provide the contrastive targets.
+          </p>
+          <p>
+            <b>Training-Free CPP (TF-CPP).</b> Without any preference labels or additional training, we induce the
+            pair from a single frozen reference model: its denoising score under the original prompt <i>c</i> is the
+            preferred signal, while its score under a semantically <i>degraded</i> prompt <i>c<sup>&minus;</sup></i>
+            is the dispreferred signal. Degraded prompts are produced by task-specific perturbations (e.g. random
+            token removal for alignment, or LLM-based rewriting for aesthetics).
+          </p>
+          <p>
+            Both instantiations optimize the same DDSPO objective and apply to UNet- and DiT-based diffusion models
+            (SD 1.x, SDXL, SD3, SANA). Code:
+            <a href="https://github.com/KU-MIIL/DDSPO">github.com/KU-MIIL/DDSPO</a>.
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
