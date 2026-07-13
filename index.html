@@ -181,47 +181,165 @@
   </div>
 </section>
 
+<!-- Method. -->
 <section class="section">
   <div class="container is-max-desktop">
-    <div class="columns is-centered has-text-centered">
+    <div class="columns is-centered">
       <div class="column is-four-fifths">
-        <h2 class="title is-3">Contrastive Policy Pair (CPP)</h2>
+        <h2 class="title is-3 has-text-centered">Method</h2>
         <div class="content has-text-justified">
           <p>
-            DDSPO derives per-timestep supervision from a <b>contrastive policy pair</b> &mdash; a
-            <i>winning</i> policy and a <i>losing</i> policy whose denoising scores serve as the preferred
-            (&epsilon;<sub>&#8902;</sub><sup>w</sup>) and dispreferred (&epsilon;<sub>&#8902;</sub><sup>l</sup>)
-            targets at every step. This grounds supervision in the model's actual backward denoising
-            transitions, unlike forward-process approximations from terminal samples. We give two ways to
-            instantiate the pair:
+            Diffusion&nbsp;DPO obtains its supervision targets from the <i>forward</i> process
+            <em>q(x<sub>t-1</sub>|x<sub>t</sub>,x<sub>0</sub>)</em> derived from terminal samples
+            (x<sub>0</sub><sup>w</sup>, x<sub>0</sub><sup>l</sup>) &mdash; a surrogate that does not match the
+            model's actual reverse denoising process at inference. <b>DDSPO</b> instead defines preference
+            <i>directly over backward denoising transitions</i>: at every timestep <i>t</i> it contrasts the
+            denoising scores of a <b>contrastive policy pair</b> &mdash; a <i>winning</i> policy and a
+            <i>losing</i> policy &mdash; and optimizes the model toward the preferred score target
+            &epsilon;<sub>&#8902;</sub><sup>w</sup> and away from the dispreferred one
+            &epsilon;<sub>&#8902;</sub><sup>l</sup>. This yields dense, transition-level supervision across the
+            denoising trajectory rather than a single signal on the final sample.
           </p>
           <p>
-            <b>Data-Driven CPP (DD-CPP).</b> Given a preference-labeled dataset
-            {(x<sub>0</sub><sup>w</sup>, x<sub>0</sub><sup>l</sup>, c)}, we fine-tune two models from the same
-            pretrained initialization &mdash; a winning model &phi;<sup>w</sup> on the preferred samples and a
-            losing model &phi;<sup>l</sup> on the dispreferred samples &mdash; with a standard diffusion loss.
-            Their per-step scores &epsilon;<sub>&phi;<sup>w</sup></sub> and &epsilon;<sub>&phi;<sup>l</sup></sub>
-            provide the contrastive targets.
+            We propose two complementary ways to instantiate the contrastive policy pair:
           </p>
+          <ul>
+            <li>
+              <b>Data-Driven CPP (DD-CPP).</b> Given a preference-labeled dataset
+              {(x<sub>0</sub><sup>w</sup>, x<sub>0</sub><sup>l</sup>, c)}, we fine-tune two models from the same
+              pretrained initialization &mdash; a winning model &phi;<sup>w</sup> on the preferred samples and a
+              losing model &phi;<sup>l</sup> on the dispreferred samples &mdash; with a standard diffusion loss,
+              and use their per-step scores as the contrastive targets.
+            </li>
+            <li>
+              <b>Training-Free CPP (TF-CPP).</b> Without any preference labels or extra training, we induce the
+              pair from a single frozen reference model: its score under the original prompt <i>c</i> is the
+              preferred signal, while its score under a semantically <b>degraded</b> prompt
+              <i>c<sup>&minus;</sup></i> is the dispreferred signal.
+            </li>
+          </ul>
           <p>
-            <b>Training-Free CPP (TF-CPP).</b> Without any preference labels or additional training, we induce the
-            pair from a single frozen reference model: its denoising score under the original prompt <i>c</i> is the
-            preferred signal, while its score under a semantically <i>degraded</i> prompt <i>c<sup>&minus;</sup></i>
-            is the dispreferred signal. Degraded prompts are produced by task-specific perturbations (e.g. random
-            token removal for alignment, or LLM-based rewriting for aesthetics).
-          </p>
-          <p>
-            Both instantiations optimize the same DDSPO objective and apply to UNet- and DiT-based diffusion models
-            (SD 1.x, SDXL, SD3, SANA). Code:
-            <a href="https://github.com/KU-MIIL/DDSPO">github.com/KU-MIIL/DDSPO</a>.
+            The type of prompt degradation is task-specific: <i>random token removal</i> for text&ndash;image
+            alignment, and <i>LLaMA-based rewriting</i> for aesthetic quality.
           </p>
         </div>
       </div>
     </div>
   </div>
 </section>
+<!--/ Method. -->
 
-<!-- <section class="section" id="BibTeX">
+<!-- Quantitative. -->
+<section class="section">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3 has-text-centered">Quantitative Results</h2>
+
+        <h3 class="title is-5">Text-to-Image Alignment</h3>
+        <p class="content has-text-justified">
+          On SD-1.4 with identical TF-CPP-constructed preference data, CPP-based supervision outperforms
+          forward-process baselines; replacing DSPO's forward-posterior targets with CPP targets (DSPO+CPP) also
+          helps, showing the benefit is not specific to the DPO objective.
+        </p>
+        <div class="table-container">
+          <table class="table is-bordered is-narrow is-hoverable" style="margin:0 auto;">
+            <thead><tr><th>Model</th><th>GenEval&uarr;</th><th>CompBench&uarr;</th><th>FID&darr;</th><th>IS&uarr;</th></tr></thead>
+            <tbody>
+              <tr style="background:#f0f0f0;"><td>SD-1.4</td><td>.4245</td><td>.3150</td><td>13.05</td><td>36.76</td></tr>
+              <tr><td>&nbsp;+D-DPO</td><td>.4841</td><td>.3723</td><td>18.02</td><td>36.64</td></tr>
+              <tr><td>&nbsp;+DSPO</td><td>.4841</td><td>.3793</td><td>18.28</td><td>35.87</td></tr>
+              <tr><td>&nbsp;+DSPO+CPP (Ours)</td><td>.4978</td><td><b>.3854</b></td><td>17.12</td><td>37.47</td></tr>
+              <tr><td>&nbsp;+DDSPO (Ours)</td><td><b>.5045</b></td><td>.3823</td><td><b>16.39</b></td><td><b>38.10</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="has-text-centered is-size-7 has-text-grey">Comparison of preference-optimization methods on SD-1.4 (same TF-CPP data).</p>
+
+        <p class="content has-text-justified" style="margin-top:1.5rem;">
+          DDSPO improves text&ndash;image alignment consistently across UNet- and DiT-based backbones.
+        </p>
+        <div class="table-container">
+          <table class="table is-bordered is-narrow is-hoverable" style="margin:0 auto;">
+            <thead><tr><th>Model</th><th>GenEval&uarr;</th><th>CompBench&uarr;</th></tr></thead>
+            <tbody>
+              <tr style="background:#f0f0f0;"><td>SD-1.4</td><td>.4245</td><td>.3150</td></tr>
+              <tr><td>&nbsp;+DDSPO</td><td><b>.5045</b></td><td><b>.3723</b></td></tr>
+              <tr style="background:#f0f0f0;"><td>SDXL</td><td>.5229</td><td>.4034</td></tr>
+              <tr><td>&nbsp;+DDSPO</td><td><b>.6049</b></td><td><b>.4857</b></td></tr>
+              <tr style="background:#f0f0f0;"><td>SANA</td><td>.6812</td><td>.4846</td></tr>
+              <tr><td>&nbsp;+DDSPO</td><td><b>.7266</b></td><td><b>.5255</b></td></tr>
+              <tr style="background:#f0f0f0;"><td>SD3-M</td><td>.7123</td><td>.5155</td></tr>
+              <tr><td>&nbsp;+DDSPO</td><td><b>.7384</b></td><td><b>.5740</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="has-text-centered is-size-7 has-text-grey">DDSPO across diverse backbones (TF-CPP).</p>
+
+        <h3 class="title is-5" style="margin-top:2rem;">Aesthetic Quality</h3>
+        <p class="content has-text-justified">
+          Under matched Pick-a-Pic supervision (DD-CPP), DDSPO improves over Diffusion-DPO; without any
+          human-annotated data (TF-CPP) it remains competitive with supervised methods.
+        </p>
+        <div class="columns">
+          <div class="column">
+            <div class="table-container">
+              <table class="table is-bordered is-narrow is-hoverable" style="margin:0 auto;">
+                <thead><tr><th>SD-1.5</th><th>Data</th><th>HPSv2&uarr;</th><th>PickScore&uarr;</th></tr></thead>
+                <tbody>
+                  <tr style="background:#f0f0f0;"><td>SD-1.5</td><td>&ndash;</td><td>26.95</td><td>21.14</td></tr>
+                  <tr><td>&nbsp;+D-DPO</td><td>Pick-a-Pic</td><td>27.25</td><td>21.34</td></tr>
+                  <tr><td>&nbsp;+D-KTO</td><td>Pick-a-Pic</td><td>27.89</td><td>21.39</td></tr>
+                  <tr><td>&nbsp;+SPO</td><td>Pick-a-Pic</td><td>27.50</td><td>21.41</td></tr>
+                  <tr><td>&nbsp;+DDSPO</td><td>Pick-a-Pic</td><td>27.60</td><td><b>21.50</b></td></tr>
+                  <tr><td>&nbsp;+DDSPO</td><td>None</td><td>27.46</td><td>21.35</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="column">
+            <div class="table-container">
+              <table class="table is-bordered is-narrow is-hoverable" style="margin:0 auto;">
+                <thead><tr><th>SDXL</th><th>Data</th><th>HPSv2&uarr;</th><th>PickScore&uarr;</th></tr></thead>
+                <tbody>
+                  <tr style="background:#f0f0f0;"><td>SDXL</td><td>&ndash;</td><td>27.89</td><td>22.27</td></tr>
+                  <tr><td>&nbsp;+D-DPO</td><td>Pick-a-Pic</td><td>28.55</td><td>22.61</td></tr>
+                  <tr><td>&nbsp;+MAPO</td><td>Pick-a-Pic</td><td>28.22</td><td>22.30</td></tr>
+                  <tr><td>&nbsp;+SPO</td><td>Pick-a-Pic</td><td><b>29.21</b></td><td><b>23.11</b></td></tr>
+                  <tr><td>&nbsp;+DDSPO</td><td>Pick-a-Pic</td><td>29.09</td><td>22.71</td></tr>
+                  <tr><td>&nbsp;+DDSPO</td><td>None</td><td>28.78</td><td>22.70</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <p class="has-text-centered is-size-7 has-text-grey">Aesthetic quality vs. SOTA (HPSv2 / PickScore).</p>
+      </div>
+    </div>
+  </div>
+</section>
+<!--/ Quantitative. -->
+
+<!-- Qualitative. -->
+<section class="section has-background-light">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered">
+      <div class="column is-full">
+        <h2 class="title is-3 has-text-centered">Qualitative Results</h2>
+        <figure class="image">
+          <img src="./static/images/qual_sdxl_6col.png" alt="Qualitative comparison SDXL vs DDSPO">
+        </figure>
+        <p class="has-text-centered is-size-6 has-text-grey" style="margin-top:.5rem;">
+          <b>SDXL vs. DDSPO (TF-CPP).</b> Top row: SDXL; bottom row: DDSPO. Images are generated from the same
+          prompts and random seeds.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+<!--/ Qualitative. -->
+
+<section class="section" id="BibTeX">
   <div class="container is-max-desktop content">
     <h2 class="title">BibTeX</h2>
     <pre><code>@inproceedings{kim2026ddspo,
@@ -231,7 +349,7 @@
     year      = {2026}
   }</code></pre>
   </div>
-</section> -->
+</section>
 
 
 <footer class="footer">
